@@ -1,37 +1,33 @@
 #!/bin/bash
-# ==============================================================================
-# Error Observability Tools Runner (Linux/macOS)
-# ==============================================================================
-# Runs scripts in a Docker container with all required tools
-#
-# Usage:
-#   ./run.sh <script-name>           # Run a script
-#   ./run.sh --build <script-name>   # Rebuild container and run script
-#   ./run.sh --list                  # List available scripts
-#
-# Examples:
-#   ./run.sh generate-secrets
-#   ./run.sh --build generate-secrets
-#
-# ==============================================================================
+# =============================================================================
+# Error Observability Tools Container Launcher (Linux/macOS)
+# Starts an interactive Linux container with all required tools
+# =============================================================================
 
-set -e
+set -euo pipefail
+
+# Configuration - get project dir (parent of tools folder)
+TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$TOOLS_DIR")"
+IMAGE_NAME="error-observability-tools"
+CONTAINER_NAME="error-observability-tools-shell"
 
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Configuration
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-IMAGE_NAME="error-observability-tools"
-CONTAINER_NAME="error-observability-tools-runner"
+# Check if Docker is running
+if ! docker info &> /dev/null; then
+    echo -e "${RED}[ERROR] Docker is not running. Please start Docker first.${NC}"
+    exit 1
+fi
 
 # Parse arguments
 BUILD=false
-SCRIPT_NAME=""
+SCRIPT=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -39,65 +35,69 @@ while [[ $# -gt 0 ]]; do
             BUILD=true
             shift
             ;;
-        --list|-l)
-            echo "Available scripts:"
-            ls -1 "${PROJECT_DIR}/scripts/"*.sh 2>/dev/null | xargs -I{} basename {} .sh || echo "No scripts found"
-            exit 0
+        --script|-s)
+            SCRIPT="$2"
+            shift 2
             ;;
         --help|-h)
-            echo "Usage: $0 [OPTIONS] <script-name>"
+            echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --build, -b    Rebuild the Docker image before running"
-            echo "  --list, -l     List available scripts"
-            echo "  --help, -h     Show this help message"
+            echo "  --build, -b          Rebuild the tools container"
+            echo "  --script, -s CMD     Run a script directly without interactive shell"
+            echo "  --help, -h           Show this help"
             echo ""
             echo "Examples:"
-            echo "  $0 generate-secrets"
-            echo "  $0 --build generate-secrets"
+            echo "  $0                   Start interactive shell"
+            echo "  $0 --build           Rebuild and start interactive shell"
+            echo "  $0 -s './scripts/generate-secrets.sh'"
             exit 0
             ;;
-        -*)
+        *)
             echo -e "${RED}Unknown option: $1${NC}"
             exit 1
-            ;;
-        *)
-            SCRIPT_NAME="$1"
-            shift
             ;;
     esac
 done
 
-# Validate script name
-if [[ -z "$SCRIPT_NAME" ]]; then
-    echo -e "${RED}Error: No script name provided${NC}"
-    echo "Usage: $0 <script-name>"
-    echo "Run '$0 --list' to see available scripts"
-    exit 1
+# Build if requested or image doesn't exist
+if [[ "$BUILD" == "true" ]]; then
+    echo -e "${CYAN}[INFO] Rebuilding tools container...${NC}"
+    docker build -t "$IMAGE_NAME" "$TOOLS_DIR"
+    echo ""
+elif ! docker image inspect "$IMAGE_NAME" &> /dev/null; then
+    echo -e "${CYAN}[INFO] Tools image not found. Building...${NC}"
+    docker build -t "$IMAGE_NAME" "$TOOLS_DIR"
+    echo ""
 fi
 
-# Check if script exists
-SCRIPT_PATH="${PROJECT_DIR}/scripts/${SCRIPT_NAME}.sh"
-if [[ ! -f "$SCRIPT_PATH" ]]; then
-    echo -e "${RED}Error: Script not found: ${SCRIPT_NAME}.sh${NC}"
-    echo "Run '$0 --list' to see available scripts"
-    exit 1
+# If a script is specified, run it directly
+if [[ -n "$SCRIPT" ]]; then
+    echo -e "${CYAN}[INFO] Running: $SCRIPT${NC}"
+    docker run --rm \
+        -v "$PROJECT_DIR:/workspace" \
+        -w /workspace \
+        "$IMAGE_NAME" \
+        /bin/bash -c "$SCRIPT"
+    exit $?
 fi
 
-# Build image if requested or if it doesn't exist
-if [[ "$BUILD" == "true" ]] || ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
-    echo -e "${YELLOW}Building Docker image...${NC}"
-    docker build -t "$IMAGE_NAME" -f "${SCRIPT_DIR}/Dockerfile" "$PROJECT_DIR"
-    echo -e "${GREEN}Image built successfully${NC}"
-fi
-
-# Run the script in container
-echo -e "${GREEN}Running ${SCRIPT_NAME}...${NC}"
+# Interactive mode
+echo ""
+echo -e "${GREEN}===========================================${NC}"
+echo -e "${GREEN} Error Observability Tools${NC}"
+echo -e "${GREEN}===========================================${NC}"
+echo ""
+echo "Available scripts:"
+echo -e "  ${YELLOW}./scripts/generate-secrets.sh${NC}   - Generate .env with secure secrets"
+echo ""
+echo "Type 'exit' to leave the container."
+echo -e "${GREEN}===========================================${NC}"
 echo ""
 
-docker run --rm -it \
+# Run interactive container
+docker run -it --rm \
     --name "$CONTAINER_NAME" \
-    -v "${PROJECT_DIR}:/app/project" \
-    -w /app/project \
-    "$IMAGE_NAME" \
-    bash "/app/project/scripts/${SCRIPT_NAME}.sh" "$@"
+    -v "$PROJECT_DIR:/workspace" \
+    -w /workspace \
+    "$IMAGE_NAME"
