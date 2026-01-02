@@ -235,37 +235,122 @@ When set to `true`, all users belong to a single shared team. This simplifies pe
 
 **Default:** `CB_ADMINS`
 
-Controls who can register new user accounts:
+Controls who can register new user accounts. This is one of the most important security settings.
 
-| Value | Description |
-|-------|-------------|
-| `CB_ANYBODY` | Anyone can sign up without approval. **Warning:** Only use behind firewall/VPN! |
-| `CB_MEMBERS` | Any existing user can invite new users via email |
-| `CB_ADMINS` | Only admin users can invite new users |
-| `CB_NOBODY` | User registration completely disabled |
+| Value | Description | Use Case |
+|-------|-------------|----------|
+| `CB_ANYBODY` | Anyone can sign up without approval | **Dangerous!** Only for internal networks behind firewall/VPN |
+| `CB_MEMBERS` | Any existing user can invite new users | Self-service teams, moderate control |
+| `CB_ADMINS` | Only admin users can invite new users | Corporate environments, strict control |
+| `CB_NOBODY` | User registration completely disabled | Locked-down instances, no new users |
 
-**Security Recommendation:** Use `CB_ADMINS` or `CB_MEMBERS` for internet-facing instances.
+#### Detailed Explanation
+
+**`CB_ANYBODY` - Open Registration**
+```
+Login Page → "Sign Up" link visible → Anyone can create account
+```
+- New users see a "Sign up" link on the login page
+- They can create an account with just an email and password
+- No approval or invitation required
+- **Security Risk:** If exposed to the internet, anyone can create accounts
+- **Safe Use:** Behind VPN, firewall, or IP whitelist
+
+**`CB_MEMBERS` - Member Invitations**
+```
+Existing User → Invite to Team/Project → Enter email → New user receives invite
+```
+- No public "Sign up" link on login page
+- Any existing user can invite new users
+- Invitation happens when adding members to a team or project
+- If the email isn't registered, an invitation is sent
+- Good for growing teams where trust is distributed
+
+**`CB_ADMINS` - Admin-Only Invitations**
+```
+Admin User → Invite to Team/Project → Enter email → New user receives invite
+```
+- No public "Sign up" link on login page
+- Only users with "Admin" role can invite new users
+- Regular users can only add existing users to teams/projects
+- Best for corporate environments with controlled access
+- **Recommended for most production deployments**
+
+**`CB_NOBODY` - No Registration**
+```
+No new users can be created (except via CREATE_SUPERUSER or CLI)
+```
+- No public "Sign up" link
+- No invitation capability for anyone
+- Existing users remain active
+- New users can only be created via:
+  - `CREATE_SUPERUSER` environment variable
+  - Django management command (`createsuperuser`)
+- Use for fully locked-down instances
+
+#### Decision Matrix
+
+| Scenario | Recommended Setting |
+|----------|---------------------|
+| Personal instance | `SINGLE_USER=true` |
+| Small trusted team | `CB_MEMBERS` |
+| Corporate/Enterprise | `CB_ADMINS` |
+| Public internet, no VPN | `CB_ADMINS` or `CB_NOBODY` |
+| Behind VPN/Firewall | `CB_ANYBODY` is acceptable |
+| Compliance requirements | `CB_ADMINS` with `USER_REGISTRATION_VERIFY_EMAIL=true` |
 
 ### `USER_REGISTRATION_VERIFY_EMAIL`
 
 **Default:** `true`
 
-When enabled, new users must verify their email address before they can log in. This prevents:
-- Typos in email addresses
-- Spam/fake accounts
-- Unauthorized access via guessed emails
+When enabled, new users must verify their email address before they can log in.
+
+**How it works:**
+1. User receives invitation or signs up
+2. Verification email is sent with a unique link
+3. User clicks link to verify email
+4. Only then can user set password and log in
+
+**Benefits:**
+- Confirms email address is valid and accessible
+- Prevents typos in email addresses
+- Blocks spam/fake account creation
+- Required for password reset to work
+
+**When to disable:**
+- Internal networks where email isn't configured
+- Development/testing environments
+- When using SSO/OIDC (users already verified)
+
+### `USER_REGISTRATION_VERIFY_EMAIL_EXPIRY`
+
+**Default:** `86400` (24 hours)
+
+Time in seconds that the email verification link remains valid.
+
+| Duration | Seconds |
+|----------|---------|
+| 1 hour | `3600` |
+| 12 hours | `43200` |
+| 24 hours | `86400` |
+| 48 hours | `172800` |
+| 7 days | `604800` |
+
+If a user doesn't verify within this time, they must request a new invitation.
 
 ### `TEAM_CREATION`
 
 **Default:** `CB_ADMINS`
 
-Controls who can create new teams:
+Controls who can create new teams. Teams are organizational units that group projects and users.
 
-| Value | Description |
-|-------|-------------|
-| `CB_MEMBERS` | Any user can create teams |
-| `CB_ADMINS` | Only admin users can create teams |
-| `CB_NOBODY` | Team creation disabled |
+| Value | Description | Use Case |
+|-------|-------------|----------|
+| `CB_MEMBERS` | Any user can create teams | Self-organizing teams, startups |
+| `CB_ADMINS` | Only admin users can create teams | Controlled structure |
+| `CB_NOBODY` | Team creation disabled | Single-team mode, use with `SINGLE_TEAM=true` |
+
+**Note:** If `SINGLE_TEAM=true`, this setting is ignored since there's only one team.
 
 ---
 
@@ -354,43 +439,140 @@ When enabled, logs the subject and recipients of each sent email to the containe
 
 These settings protect against accidental abuse and resource exhaustion.
 
+**Important:** Rate limits are applied **per project**, not globally.
+
+### Understanding Rate Limits for Multi-Project Instances
+
+When planning capacity, consider that limits apply per project:
+
+| Projects | Events/5min | Theoretical Max/5min | Events/hour | Theoretical Max/hour |
+|----------|-------------|----------------------|-------------|----------------------|
+| 10       | 2,500       | 25,000               | 15,000      | 150,000              |
+| 50       | 2,500       | 125,000              | 15,000      | 750,000              |
+| 100      | 2,500       | 250,000              | 15,000      | 1,500,000            |
+| 200      | 2,500       | 500,000              | 15,000      | 3,000,000            |
+
+**In practice:** Not all projects will hit limits simultaneously. Typical usage is 5-10% of theoretical maximum.
+
+### Sizing Guide
+
+| Instance Size | Projects | Events/5min | Events/hour | Workers |
+|---------------|----------|-------------|-------------|---------|
+| Small         | 1-10     | 1,000       | 5,000       | 2       |
+| Medium        | 10-50    | 2,500       | 15,000      | 4       |
+| Large         | 50-200   | 2,500       | 15,000      | 4-6     |
+| XLarge        | 200+     | 1,500       | 10,000      | 6-8     |
+
+**Note:** For very large instances (200+ projects), consider **reducing** per-project limits to protect overall system stability. A runaway error loop in one project shouldn't impact others.
+
 ### `MAX_EVENT_SIZE`
 
-**Default:** `1048576` (1 MB)
+**Default:** `2097152` (2 MB)
 
 Maximum size of a single event that Bugsink will process. Events larger than this are rejected.
+
+**Considerations:**
+
+- 1 MB is sufficient for most errors
+- 2 MB allows for larger stack traces and local variables
+- Increase to 5-10 MB only if you use Python's extended local variable capture
+
+**Byte values:**
+
+| Size  | Bytes      |
+|-------|------------|
+| 1 MB  | `1048576`  |
+| 2 MB  | `2097152`  |
+| 5 MB  | `5242880`  |
+| 10 MB | `10485760` |
 
 ### `MAX_ENVELOPE_SIZE`
 
 **Default:** `104857600` (100 MB)
 
-Maximum size of an envelope (which may contain multiple events) that Bugsink will process.
+Maximum size of an envelope (which may contain multiple events) that Bugsink will process. An envelope is a batch of events sent together by the SDK.
 
 ### `MAX_ENVELOPE_COMPRESSED_SIZE`
 
 **Default:** `20971520` (20 MB)
 
-Maximum size of a compressed envelope before decompression.
+Maximum size of a compressed envelope before decompression. SDKs typically compress envelopes before sending.
 
 ### `MAX_EVENTS_PER_PROJECT_PER_5_MINUTES`
 
-**Default:** `1000`
+**Default:** `2500`
 
-Rate limit: Maximum events a single project can submit in 5 minutes. Exceeding this triggers rate limiting responses to the SDK.
+Rate limit: Maximum events a single project can submit in 5 minutes. Exceeding this triggers rate limiting responses (HTTP 429) to the SDK.
+
+**Why this matters:**
+
+- Protects against "error storms" (e.g., a bug in a loop generating millions of identical errors)
+- Prevents one misbehaving project from consuming all resources
+- SDKs handle 429 responses gracefully by backing off
+
+**Tuning:**
+
+```text
+Events/minute = MAX_EVENTS_PER_PROJECT_PER_5_MINUTES / 5
+```
+
+- Default 2,500 = 500 events/minute per project
+- Sufficient for most production workloads
+- Reduce for very large instances (200+ projects)
 
 ### `MAX_EVENTS_PER_PROJECT_PER_HOUR`
 
-**Default:** `5000`
+**Default:** `15000`
 
-Rate limit: Maximum events a single project can submit per hour.
+Rate limit: Maximum events a single project can submit per hour. This is a secondary limit that catches sustained high volume.
+
+**Tuning:**
+
+```text
+Events/minute = MAX_EVENTS_PER_PROJECT_PER_HOUR / 60
+```
+
+- Default 15,000 = 250 events/minute sustained per project
+- Lower than the 5-minute burst rate to prevent sustained abuse
+- Increase if legitimate high-volume projects need more headroom
 
 ### `MAX_EMAILS_PER_MONTH`
 
 **Default:** Empty (unlimited)
 
-Optional quota for total emails sent by the Bugsink instance per month. Useful for controlling costs with transactional email services.
+Optional quota for total emails sent by the Bugsink instance per month. This is a **global** limit, not per project.
 
-**Example:** `10000`
+**Use cases:**
+
+- Control costs with transactional email services (SendGrid, Mailgun, etc.)
+- Prevent email spam if a project generates excessive alerts
+
+**Example values:**
+
+- Small instance: `10000`
+- Medium instance: `50000`
+- Large instance: `100000` or unlimited
+
+### Rate Limit Best Practices
+
+1. **Start with defaults** - They work well for most installations
+2. **Monitor before adjusting** - Watch for 429 responses in logs
+3. **Increase gradually** - Double limits if hitting them legitimately
+4. **Consider per-project variation** - Some projects may need higher limits
+5. **Plan for incidents** - A production incident can spike errors 100x
+
+### What Happens When Limits Are Hit
+
+1. SDK receives HTTP 429 (Too Many Requests)
+2. SDK backs off and retries with exponential delay
+3. Some events may be dropped if backpressure continues
+4. Bugsink logs rate limit events for monitoring
+
+**Monitoring rate limits:**
+
+```bash
+docker compose logs bugsink-server | grep -i "rate limit"
+```
 
 ---
 
