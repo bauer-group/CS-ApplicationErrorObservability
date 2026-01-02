@@ -23,26 +23,51 @@ jobs:
   validate-compose:
     uses: bauer-group/automation-templates/.github/workflows/modules-validate-compose.yml@main
     with:
-      compose-file: 'docker-compose.yml'
+      compose-files: '["docker-compose.yml", "docker-compose.traefik.yml", "docker-compose.development.yml"]'
       env-template: |
         {
-          "APP_ID": "test",
-          "APP_KEY": "base64:test",
-          "DB_PASSWORD": "test",
-          "REDIS_PASSWORD": "test",
-          "PUSHER_APP_ID": "test",
-          "PUSHER_APP_KEY": "test",
-          "PUSHER_APP_SECRET": "test",
-          "ROOT_USERNAME": "admin",
-          "ROOT_USER_EMAIL": "test@test.com",
-          "ROOT_USER_PASSWORD": "test"
+          "STACK_NAME": "error-observability_test",
+          "BUGSINK_VERSION": "2",
+          "TIME_ZONE": "UTC",
+          "SITE_TITLE": "Error Observability Test",
+          "POSTGRES_VERSION": "18",
+          "DATABASE_POOLMAXSIZE": "100",
+          "DATABASE_PASSWORD": "test_password_123",
+          "PRIVATESUBNET": "252",
+          "SERVICE_HOSTNAME": "errors.test.example.com",
+          "PROXY_NETWORK": "traefik",
+          "SECRET_KEY": "test_secret_key_base64_placeholder_value",
+          "CREATE_SUPERUSER": "admin@test.com:test_password",
+          "SINGLE_USER": "false",
+          "SINGLE_TEAM": "false",
+          "USER_REGISTRATION": "CB_ADMINS",
+          "USER_REGISTRATION_VERIFY_EMAIL": "true",
+          "TEAM_CREATION": "CB_ADMINS",
+          "EMAIL_HOST": "smtp.test.com",
+          "EMAIL_PORT": "587",
+          "EMAIL_HOST_USER": "test@test.com",
+          "EMAIL_HOST_PASSWORD": "test_smtp_password",
+          "EMAIL_USE_TLS": "true",
+          "EMAIL_USE_SSL": "false",
+          "EMAIL_TIMEOUT": "5",
+          "DEFAULT_FROM_EMAIL": "Test <test@test.com>",
+          "EMAIL_LOGGING": "false",
+          "MAX_EVENT_SIZE": "2097152",
+          "MAX_ENVELOPE_SIZE": "104857600",
+          "MAX_ENVELOPE_COMPRESSED_SIZE": "20971520",
+          "MAX_EVENTS_PER_PROJECT_PER_5_MINUTES": "2500",
+          "MAX_EVENTS_PER_PROJECT_PER_HOUR": "15000",
+          "TASK_ALWAYS_EAGER": "false",
+          "SNAPPEA_NUM_WORKERS": "4",
+          "PHONEHOME": "false",
+          "DEBUG": "false"
         }
 
   validate-scripts:
     uses: bauer-group/automation-templates/.github/workflows/modules-validate-shellscript.yml@main
     with:
       scan-directory: '.'
-      severity: 'warning'
+      severity: 'error'
 
   release:
     needs: [validate-compose, validate-scripts]
