@@ -4,7 +4,7 @@ Backend Registration Patch for Bugsink v2
 ==========================================
 
 This script patches Bugsink to register custom messaging backends
-(Jira Cloud and GitHub Issues) during Docker image build.
+during Docker image build.
 
 Bugsink v2 registers backends in alerts/models.py via:
 1. Import statements for backend classes
@@ -25,21 +25,29 @@ ALERTS_DIR = os.path.join(SITE_PACKAGES, "alerts")
 SERVICE_BACKENDS_DIR = os.path.join(ALERTS_DIR, "service_backends")
 MODELS_FILE = os.path.join(ALERTS_DIR, "models.py")
 
+# Backend definitions: (module_name, class_name, kind, display_name)
+BACKENDS = [
+    ("jira_cloud", "JiraCloudBackend", "jira_cloud", "Jira Cloud"),
+    ("github_issues", "GitHubIssuesBackend", "github_issues", "GitHub Issues"),
+    ("microsoft_teams", "MicrosoftTeamsBackend", "microsoft_teams", "Microsoft Teams"),
+    ("pagerduty", "PagerDutyBackend", "pagerduty", "PagerDuty"),
+    ("webhook", "WebhookBackend", "webhook", "Webhook (Generic)"),
+]
+
 
 def verify_backend_files():
     """Verify that our backend files were copied."""
     print("Step 1: Verifying backend files...")
 
-    jira_file = os.path.join(SERVICE_BACKENDS_DIR, "jira_cloud.py")
-    github_file = os.path.join(SERVICE_BACKENDS_DIR, "github_issues.py")
+    all_ok = True
+    for module_name, class_name, kind, display_name in BACKENDS:
+        file_path = os.path.join(SERVICE_BACKENDS_DIR, f"{module_name}.py")
+        exists = os.path.exists(file_path)
+        print(f"  {module_name}.py: {'OK' if exists else 'MISSING'}")
+        if not exists:
+            all_ok = False
 
-    jira_ok = os.path.exists(jira_file)
-    github_ok = os.path.exists(github_file)
-
-    print(f"  jira_cloud.py: {'OK' if jira_ok else 'MISSING'}")
-    print(f"  github_issues.py: {'OK' if github_ok else 'MISSING'}")
-
-    return jira_ok and github_ok
+    return all_ok
 
 
 def patch_models_file():
@@ -67,9 +75,10 @@ def patch_models_file():
     import_pattern = r'(from \.service_backends\.slack import SlackBackend)'
 
     if re.search(import_pattern, content):
-        new_imports = '''from .service_backends.slack import SlackBackend
-from .service_backends.jira_cloud import JiraCloudBackend
-from .service_backends.github_issues import GitHubIssuesBackend'''
+        import_lines = ["from .service_backends.slack import SlackBackend"]
+        for module_name, class_name, kind, display_name in BACKENDS:
+            import_lines.append(f"from .service_backends.{module_name} import {class_name}")
+        new_imports = "\n".join(import_lines)
         content = re.sub(import_pattern, new_imports, content)
         print("  [OK] Added import statements")
     else:
@@ -81,7 +90,10 @@ from .service_backends.github_issues import GitHubIssuesBackend'''
     choices_pattern = r'(kind = models\.CharField\(choices=\[)\("slack", "Slack \(or compatible\)"\),?\s*(\])'
 
     if re.search(choices_pattern, content):
-        new_choices = '''kind = models.CharField(choices=[("slack", "Slack (or compatible)"), ("jira_cloud", "Jira Cloud"), ("github_issues", "GitHub Issues"), ]'''
+        choices = ['("slack", "Slack (or compatible)")']
+        for module_name, class_name, kind, display_name in BACKENDS:
+            choices.append(f'("{kind}", "{display_name}")')
+        new_choices = f'kind = models.CharField(choices=[{", ".join(choices)}, ]'
         content = re.sub(choices_pattern, new_choices, content)
         print("  [OK] Updated kind choices")
     else:
@@ -92,14 +104,16 @@ from .service_backends.github_issues import GitHubIssuesBackend'''
     get_backend_pattern = r'(def get_backend\(self\):)\s*(# once we have multiple backends: lookup by kind\.)\s*(return SlackBackend\(self\))'
 
     if re.search(get_backend_pattern, content):
-        new_get_backend = '''def get_backend(self):
-        if self.kind == "slack":
-            return SlackBackend(self)
-        if self.kind == "jira_cloud":
-            return JiraCloudBackend(self)
-        if self.kind == "github_issues":
-            return GitHubIssuesBackend(self)
-        raise ValueError(f"Unknown backend kind: {self.kind}")'''
+        backend_lines = [
+            "def get_backend(self):",
+            '        if self.kind == "slack":',
+            "            return SlackBackend(self)",
+        ]
+        for module_name, class_name, kind, display_name in BACKENDS:
+            backend_lines.append(f'        if self.kind == "{kind}":')
+            backend_lines.append(f"            return {class_name}(self)")
+        backend_lines.append('        raise ValueError(f"Unknown backend kind: {self.kind}")')
+        new_get_backend = "\n".join(backend_lines)
         content = re.sub(get_backend_pattern, new_get_backend, content)
         print("  [OK] Updated get_backend() method")
     else:
@@ -172,8 +186,8 @@ def main():
         print("[SUCCESS] Backend registration complete!")
         print()
         print("Added backends:")
-        print("  - Jira Cloud (jira_cloud)")
-        print("  - GitHub Issues (github_issues)")
+        for module_name, class_name, kind, display_name in BACKENDS:
+            print(f"  - {display_name} ({kind})")
         print("=" * 60)
 
     except Exception as e:

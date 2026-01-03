@@ -40,7 +40,7 @@ LABEL org.opencontainers.image.version="0.0.0"
 # Extended Labels
 LABEL org.opencontainers.image.base.name="bugsink/bugsink:${BUGSINK_VERSION}"
 LABEL com.bauer-group.bugsink.version="${BUGSINK_VERSION}"
-LABEL com.bauer-group.features="jira-cloud,github-issues"
+LABEL com.bauer-group.features="jira-cloud,github-issues,microsoft-teams,pagerduty,webhook"
 
 # =============================================================================
 # Copy Custom Messaging Backends
@@ -56,6 +56,9 @@ ENV BUGSINK_SITE_PACKAGES=/usr/local/lib/python3.12/site-packages
 # Copy backend files to Bugsink's service_backends directory
 COPY backends/jira_cloud.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/jira_cloud.py
 COPY backends/github_issues.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/github_issues.py
+COPY backends/microsoft_teams.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/microsoft_teams.py
+COPY backends/pagerduty.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/pagerduty.py
+COPY backends/webhook.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/webhook.py
 
 # Copy the initialization patch script
 COPY patches/register_backends.py /tmp/register_backends.py

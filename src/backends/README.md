@@ -1,6 +1,6 @@
 # Bugsink Custom Messaging Backends
 
-Custom Messaging-Backends für Bugsink v2 zur Integration mit Issue-Tracking-Systemen.
+Custom Messaging-Backends für Bugsink v2 zur Integration mit Issue-Tracking-Systemen und Alerting-Plattformen.
 
 **Kompatibilität:** Bugsink v2.x
 
@@ -10,12 +10,15 @@ Custom Messaging-Backends für Bugsink v2 zur Integration mit Issue-Tracking-Sys
 |---------|--------------|-------|
 | Jira Cloud | Erstellt Bug-Tickets in Jira Cloud | `jira_cloud.py` |
 | GitHub Issues | Erstellt Issues in GitHub Repositories | `github_issues.py` |
+| Microsoft Teams | Sendet Adaptive Cards an Teams Channels | `microsoft_teams.py` |
+| PagerDuty | Erstellt Incidents für On-Call Alerting | `pagerduty.py` |
+| Webhook (Generic) | Sendet JSON an beliebige HTTP Endpoints | `webhook.py` |
 
 ## Wie es funktioniert
 
 Diese Backends werden beim Docker-Build automatisch in das Bugsink-Image integriert:
 
-1. **COPY**: Backend-Dateien werden nach `/app/alerts/service_backends/` kopiert
+1. **COPY**: Backend-Dateien werden nach `/usr/local/lib/python3.12/site-packages/alerts/service_backends/` kopiert
 2. **PATCH**: `register_backends.py` patcht `alerts/models.py` zur Registrierung
 3. **CLEANUP**: Das Patch-Skript wird nach der Ausführung entfernt
 
@@ -27,18 +30,9 @@ Diese Backends werden beim Docker-Build automatisch in das Bugsink-Image integri
   - Methode `clear_failure_status()` zum Zurücksetzen
 - **Task-System**: `snappea` (nicht Celery) - Import: `from snappea.decorators import shared_task`
 - **Transaktionen**: `from bugsink.transaction import immediate_atomic` für DB-Writes in Tasks
-- **Backend-Registrierung**: Via `get_alert_service_kind_choices()` und `get_alert_service_backend_class()` in `alerts/models.py`
+- **Backend-Registrierung**: Via `kind` choices und `get_backend()` in `alerts/models.py`
 - **ConfigForm**: Verwendet `config = kwargs.pop("config", None)` Pattern
-
-## PR-Kompatibilität
-
-Diese Backend-Dateien sind so strukturiert, dass sie für einen PR ins Bugsink-Repo verwendet werden können:
-
-1. **Speicherort**: `alerts/service_backends/jira_cloud.py` bzw. `github_issues.py`
-2. **Registrierung**: Ergänzungen in `alerts/models.py`:
-   - Import der Backend-Klassen
-   - Tuple in `get_alert_service_kind_choices()`: `("jira_cloud", "Jira Cloud")`
-   - If-Block in `get_alert_service_backend_class()`: `if kind == "jira_cloud": return JiraCloudBackend`
+- **Config-Speicherung**: JSON im `config` TextField
 
 ## Konfiguration
 
@@ -66,6 +60,36 @@ Diese Backend-Dateien sind so strukturiert, dass sie für einen PR ins Bugsink-R
    - **Labels**: Optional, z.B. `bug,bugsink`
    - **Assignees**: Optional, z.B. `username1,username2`
 
+### Microsoft Teams
+
+1. **Incoming Webhook erstellen**: Channel > Connectors > Incoming Webhook
+
+2. **In Bugsink konfigurieren**:
+   - **Webhook URL**: Die generierte Webhook-URL
+   - **Channel Name**: Optional, für Anzeige
+   - **Mention Users**: Optional, E-Mail-Adressen für @-Mentions
+   - **Theme Color**: Hex-Farbe für die Card (Standard: `d63333`)
+
+### PagerDuty
+
+1. **Integration erstellen**: Service > Integrations > Events API v2
+
+2. **In Bugsink konfigurieren**:
+   - **Routing Key**: 32-Zeichen Integration Key
+   - **Default Severity**: `critical`, `error`, `warning`, oder `info`
+   - **Service Name**: Optional, Quellname (Standard: `Bugsink`)
+   - **Include Link**: Link zum Issue im Incident
+
+### Webhook (Generic)
+
+1. **In Bugsink konfigurieren**:
+   - **Webhook URL**: HTTP(S) Endpoint
+   - **HTTP Method**: `POST`, `PUT`, oder `PATCH`
+   - **Secret Header**: Optional, Header-Name für Auth (z.B. `X-Webhook-Secret`)
+   - **Secret Value**: Optional, Wert für den Secret Header
+   - **Custom Headers**: Optional, JSON-Objekt mit zusätzlichen Headers
+   - **Include Full Payload**: Vollständige Issue-Details senden
+
 ## Trigger-Events
 
 | Event | Beschreibung |
@@ -87,3 +111,18 @@ Diese Backend-Dateien sind so strukturiert, dass sie für einen PR ins Bugsink-R
 - Prüfe das Repository-Format: `owner/repo`
 - Stelle sicher, dass der Token `repo` oder `issues:write` Permissions hat
 - Verifiziere, dass Issues im Repository aktiviert sind
+
+### Microsoft Teams: "Bad Request"
+
+- Prüfe, ob die Webhook-URL noch gültig ist
+- Webhooks können ablaufen oder deaktiviert werden
+
+### PagerDuty: "Invalid Routing Key"
+
+- Der Routing Key muss exakt 32 Zeichen haben
+- Stelle sicher, dass die Integration aktiv ist
+
+### Webhook: Timeout/Connection Error
+
+- Prüfe, ob der Endpoint erreichbar ist
+- Verifiziere Firewall-Regeln und Netzwerkzugriff
