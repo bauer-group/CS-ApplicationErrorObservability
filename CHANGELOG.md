@@ -1,3 +1,10 @@
+## [0.8.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.8.0...v0.8.1) (2026-01-03)
+
+
+### Bug Fixes
+
+* Update Microsoft Teams integration documentation for webhook configuration ([55a3658](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/55a3658650fb3beccfd26bce063fb0d40c97b679))
+
 # [0.8.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.7.1...v0.8.0) (2026-01-03)
 
 
