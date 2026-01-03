@@ -1,3 +1,10 @@
+## [0.1.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.1.0...v0.1.1) (2026-01-03)
+
+
+### Bug Fixes
+
+* Add ALLOWED_HOSTS environment variable for improved host configuration ([5797a48](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/5797a488f14fda265d34b1cc4f1353ce77877f95))
+
 # [0.1.0](https://github.com/bauer-group/CS-ErrorObservability/compare/v0.0.0...v0.1.0) (2026-01-03)
 
 
