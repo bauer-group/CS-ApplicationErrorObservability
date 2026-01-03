@@ -1,3 +1,10 @@
+## [0.10.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.10.0...v0.10.1) (2026-01-03)
+
+
+### Bug Fixes
+
+* Update issue URL format in multiple backends to match Slack backend structure ([22a4634](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/22a4634867ab93b13a5f214c5c4ff7279ad73fe4))
+
 # [0.10.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.9.1...v0.10.0) (2026-01-03)
 
 
