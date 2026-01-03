@@ -78,6 +78,12 @@ class JiraCloudConfigForm(forms.Form):
         initial="error-observer",
         required=False,
     )
+    only_new_issues = forms.BooleanField(
+        label="Only New Issues",
+        help_text="Create tickets only for NEW issues (recommended to avoid duplicates). Uncheck to also create tickets for regressions and unmutes.",
+        initial=True,
+        required=False,
+    )
 
     def __init__(self, *args, **kwargs):
         """Initialize form with existing config if provided."""
@@ -90,6 +96,7 @@ class JiraCloudConfigForm(forms.Form):
             self.fields["project_key"].initial = config.get("project_key", "PROJ")
             self.fields["issue_type"].initial = config.get("issue_type", "Bug")
             self.fields["labels"].initial = ",".join(config.get("labels", []))
+            self.fields["only_new_issues"].initial = config.get("only_new_issues", True)
 
     def get_config(self):
         """Return configuration dict to be JSON serialized and stored."""
@@ -100,6 +107,7 @@ class JiraCloudConfigForm(forms.Form):
             "project_key": self.cleaned_data["project_key"],
             "issue_type": self.cleaned_data["issue_type"],
             "labels": [label.strip() for label in self.cleaned_data.get("labels", "").split(",") if label.strip()],
+            "only_new_issues": self.cleaned_data.get("only_new_issues", True),
         }
 
 
@@ -355,6 +363,12 @@ class JiraCloudBackend:
     def send_alert(self, issue_id, state_description, alert_article, alert_reason, **kwargs):
         """Dispatch alert task."""
         config = json.loads(self.service_config.config)
+
+        # Check if we should only create tickets for NEW issues
+        if config.get("only_new_issues", True) and state_description != "NEW":
+            logger.debug(f"Skipping Jira ticket for {state_description} issue {issue_id} (only_new_issues=True)")
+            return
+
         jira_cloud_backend_send_alert.delay(
             config["jira_url"],
             config["user_email"],

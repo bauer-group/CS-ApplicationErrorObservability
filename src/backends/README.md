@@ -47,6 +47,7 @@ Diese Backends werden beim Docker-Build automatisch in das Bugsink-Image integri
    - **Project Key**: z.B. `BUG`, `PROJ`
    - **Issue Type**: z.B. `Bug`, `Task`
    - **Labels**: Optional, z.B. `bugsink,production`
+   - **Only New Issues**: Aktiviert (Standard) - Erstellt Tickets nur für neue Issues, nicht für Regressions/Unmutes
 
 ### GitHub Issues
 
@@ -59,13 +60,24 @@ Diese Backends werden beim Docker-Build automatisch in das Bugsink-Image integri
    - **Access Token**: Der erstellte Token
    - **Labels**: Optional, z.B. `bug,bugsink`
    - **Assignees**: Optional, z.B. `username1,username2`
+   - **Only New Issues**: Aktiviert (Standard) - Erstellt Issues nur für neue Fehler, nicht für Regressions/Unmutes
 
 ### Microsoft Teams
 
-1. **Incoming Webhook erstellen**: Channel > Connectors > Incoming Webhook
+1. **Webhook erstellen** (eine der folgenden Methoden):
+
+   **Methode 1 - Workflows (Empfohlen, neu):**
+   - Teams Channel > "..." Menü > "Workflows"
+   - Suche nach "Post to a channel when a webhook request is received"
+   - Workflow konfigurieren und Webhook-URL kopieren
+   - URL-Format: `https://xxx.webhook.office.com/webhookb2/...`
+
+   **Methode 2 - Legacy Incoming Webhook (veraltet, wird 2026 eingestellt):**
+   - Channel Settings > Connectors > Incoming Webhook
+   - URL-Format: `https://outlook.office.com/webhook/...`
 
 2. **In Bugsink konfigurieren**:
-   - **Webhook URL**: Die generierte Webhook-URL
+   - **Webhook URL**: Die generierte Webhook-URL (beide Formate unterstützt)
    - **Channel Name**: Optional, für Anzeige
    - **Mention Users**: Optional, E-Mail-Adressen für @-Mentions
    - **Theme Color**: Hex-Farbe für die Card (Standard: `d63333`)

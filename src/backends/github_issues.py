@@ -59,6 +59,12 @@ class GitHubIssuesConfigForm(forms.Form):
         help_text="Comma-separated GitHub usernames to assign, e.g., 'user1,user2'",
         required=False,
     )
+    only_new_issues = forms.BooleanField(
+        label="Only New Issues",
+        help_text="Create issues only for NEW errors (recommended to avoid duplicates). Uncheck to also create issues for regressions and unmutes.",
+        initial=True,
+        required=False,
+    )
 
     def __init__(self, *args, **kwargs):
         """Initialize form with existing config if provided."""
@@ -69,6 +75,7 @@ class GitHubIssuesConfigForm(forms.Form):
             self.fields["access_token"].initial = config.get("access_token", "")
             self.fields["labels"].initial = ",".join(config.get("labels", []))
             self.fields["assignees"].initial = ",".join(config.get("assignees", []))
+            self.fields["only_new_issues"].initial = config.get("only_new_issues", True)
 
     def clean_repository(self):
         """Validate repository format."""
@@ -87,6 +94,7 @@ class GitHubIssuesConfigForm(forms.Form):
             "access_token": self.cleaned_data["access_token"],
             "labels": [l.strip() for l in self.cleaned_data.get("labels", "").split(",") if l.strip()],
             "assignees": [a.strip() for a in self.cleaned_data.get("assignees", "").split(",") if a.strip()],
+            "only_new_issues": self.cleaned_data.get("only_new_issues", True),
         }
 
 
@@ -357,6 +365,12 @@ class GitHubIssuesBackend:
     def send_alert(self, issue_id, state_description, alert_article, alert_reason, **kwargs):
         """Dispatch alert task."""
         config = json.loads(self.service_config.config)
+
+        # Check if we should only create issues for NEW errors
+        if config.get("only_new_issues", True) and state_description != "NEW":
+            logger.debug(f"Skipping GitHub issue for {state_description} issue {issue_id} (only_new_issues=True)")
+            return
+
         github_issues_send_alert.delay(
             config["repository"],
             config["access_token"],
