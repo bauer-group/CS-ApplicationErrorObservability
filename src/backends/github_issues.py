@@ -43,6 +43,7 @@ class GitHubIssuesConfigForm(forms.Form):
         label="Repository",
         help_text="Repository in 'owner/repo' format, e.g., 'myorg/myproject'",
         max_length=200,
+        initial="bauer-group/myproject",
         widget=forms.TextInput(attrs={"placeholder": "owner/repository"}),
     )
     access_token = forms.CharField(
@@ -53,6 +54,7 @@ class GitHubIssuesConfigForm(forms.Form):
     labels = forms.CharField(
         label="Labels (optional)",
         help_text="Comma-separated labels to add, e.g., 'bug,bugsink,production'",
+        initial="bug,error-observer",
         required=False,
     )
     assignees = forms.CharField(
