@@ -278,10 +278,10 @@ def jira_cloud_backend_send_alert(jira_url, user_email, api_token, project_key,
         "labels": labels,
     }
 
-    # Build issue URL if base URL is available
+    # Build issue URL using same path as Slack backend
     issue_url = None
     if bugsink_base_url:
-        issue_url = f"{bugsink_base_url.rstrip('/')}/issues/{issue_id}/"
+        issue_url = f"{bugsink_base_url.rstrip('/')}/issues/issue/{issue_id}/event/last/"
 
     try:
         issue = Issue.objects.select_related("project").get(pk=issue_id)

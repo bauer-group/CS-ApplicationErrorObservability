@@ -156,10 +156,10 @@ def _format_body(issue_id: str, state_description: str, alert_article: str,
     """Format alert data as GitHub-flavored Markdown."""
     from issues.models import Issue
 
-    # Build issue URL if base URL is available
+    # Build issue URL using same path as Slack backend
     issue_url = None
     if bugsink_base_url:
-        issue_url = f"{bugsink_base_url.rstrip('/')}/issues/{issue_id}/"
+        issue_url = f"{bugsink_base_url.rstrip('/')}/issues/issue/{issue_id}/event/last/"
 
     try:
         issue = Issue.objects.select_related("project").get(pk=issue_id)

@@ -256,11 +256,11 @@ def pagerduty_send_alert(routing_key, default_severity, service_name, include_li
         if unmute_reason:
             custom_details["unmute_reason"] = unmute_reason
 
-        # Build links if base URL is provided and enabled
+        # Build links if base URL is provided and enabled (use same path as Slack backend)
         links = []
         if include_link and bugsink_base_url:
             links.append({
-                "href": f"{bugsink_base_url.rstrip('/')}/issues/{issue_id}/",
+                "href": f"{bugsink_base_url.rstrip('/')}/issues/issue/{issue_id}/event/last/",
                 "text": "View in Bugsink"
             })
 

@@ -305,10 +305,10 @@ def microsoft_teams_send_alert(webhook_url, channel_name, mention_users, theme_c
         if unmute_reason:
             facts.append(("Unmute Reason", unmute_reason))
 
-        # Build issue URL if base URL is provided
+        # Build issue URL using the issue's get_absolute_url method (same as Slack backend)
         issue_url = None
         if bugsink_base_url:
-            issue_url = f"{bugsink_base_url.rstrip('/')}/issues/{issue_id}/"
+            issue_url = f"{bugsink_base_url.rstrip('/')}/issues/issue/{issue_id}/event/last/"
 
     except Issue.DoesNotExist:
         title = f"[{state_description}] Issue {issue_id}"
@@ -318,6 +318,8 @@ def microsoft_teams_send_alert(webhook_url, channel_name, mention_users, theme_c
             ("Reason", alert_reason),
         ]
         issue_url = None
+        if bugsink_base_url:
+            issue_url = f"{bugsink_base_url.rstrip('/')}/issues/issue/{issue_id}/event/last/"
 
     payload = _build_adaptive_card(
         title=title,

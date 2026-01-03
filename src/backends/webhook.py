@@ -272,10 +272,10 @@ def webhook_send_alert(webhook_url, http_method, secret_header, secret_value,
     try:
         issue = Issue.objects.select_related("project").get(pk=issue_id)
 
-        # Build issue URL if base URL is available
+        # Build issue URL using same path as Slack backend
         issue_url = None
         if bugsink_base_url:
-            issue_url = f"{bugsink_base_url.rstrip('/')}/issues/{issue_id}/"
+            issue_url = f"{bugsink_base_url.rstrip('/')}/issues/issue/{issue_id}/event/last/"
 
         data = {
             "issue_id": str(issue_id),
@@ -297,7 +297,7 @@ def webhook_send_alert(webhook_url, http_method, secret_header, secret_value,
     except Issue.DoesNotExist:
         issue_url = None
         if bugsink_base_url:
-            issue_url = f"{bugsink_base_url.rstrip('/')}/issues/{issue_id}/"
+            issue_url = f"{bugsink_base_url.rstrip('/')}/issues/issue/{issue_id}/event/last/"
         data = {
             "issue_id": str(issue_id),
             "issue_url": issue_url,
