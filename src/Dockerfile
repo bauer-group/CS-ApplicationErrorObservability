@@ -53,12 +53,8 @@ USER root
 # Bugsink is installed as a Python package in site-packages
 ENV BUGSINK_SITE_PACKAGES=/usr/local/lib/python3.12/site-packages
 
-# Copy backend files to Bugsink's service_backends directory
-COPY backends/jira_cloud.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/jira_cloud.py
-COPY backends/github_issues.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/github_issues.py
-COPY backends/microsoft_teams.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/microsoft_teams.py
-COPY backends/pagerduty.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/pagerduty.py
-COPY backends/webhook.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/webhook.py
+# Copy all backend files to Bugsink's service_backends directory
+COPY backends/*.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/
 
 # Copy the initialization patch script
 COPY patches/register_backends.py /tmp/register_backends.py
