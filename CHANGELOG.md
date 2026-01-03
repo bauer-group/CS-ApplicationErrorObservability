@@ -1,3 +1,10 @@
+# [0.10.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.9.1...v0.10.0) (2026-01-03)
+
+
+### Features
+
+* Add Bugsink issue URL to alerts in various backends ([b21d207](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/b21d207c438b8264850b383791cf3b3382e3931c))
+
 ## [0.9.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.9.0...v0.9.1) (2026-01-03)
 
 
