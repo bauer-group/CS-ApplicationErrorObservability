@@ -1,3 +1,10 @@
+# Development/Debug Configuration
+# Usage: docker compose -f docker-compose.development.yml up -d
+#
+# This configuration exposes services directly via ports (no Traefik required)
+# Access:
+#   - Bugsink:     http://localhost:8080
+
 services:
 
 ### Application Services ###
