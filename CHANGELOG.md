@@ -1,3 +1,11 @@
+# [0.4.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.3.0...v0.4.0) (2026-01-03)
+
+
+### Features
+
+* Add remote installer scripts for Client-Kit in PowerShell and Bash ([3ea2b51](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/3ea2b51d423392a934196949c8caf982601bc104))
+* Implement API mode for automatic project and team creation in Client-Kit ([80716a1](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/80716a120b9767a2fe881356152703ceac06de38))
+
 # [0.3.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.2.0...v0.3.0) (2026-01-03)
 
 
