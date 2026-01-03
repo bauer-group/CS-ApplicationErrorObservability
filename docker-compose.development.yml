@@ -25,6 +25,7 @@ services:
       - BASE_URL=https://${SERVICE_HOSTNAME}
       - BEHIND_HTTPS_PROXY=true
       - SITE_TITLE=${SITE_TITLE:-Bugsink}
+      - ALLOWED_HOSTS=${SERVICE_HOSTNAME},localhost,127.0.0.1,${ALLOWED_HOSTS:-}
 
       # Database Connection
       - DATABASE_URL=postgresql://bugsink:${DATABASE_PASSWORD}@database-server:5432/bugsink
