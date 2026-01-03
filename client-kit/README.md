@@ -4,13 +4,52 @@ Automatisiertes Tool zur Integration des Sentry SDK in deine Anwendungen.
 
 ## Features
 
+- **Remote Installation** - Direkt aus dem Git-Repo ausführbar, kein Klonen nötig
 - **Automatische Sprach-Erkennung** - Erkennt Python, Node.js, TypeScript, Java, .NET, Go, PHP, Ruby
 - **Minimale, nicht-destruktive Änderungen** - Fügt nur Konfigurations-Dateien hinzu
 - **Framework-Erkennung** - Erkennt Django, Flask, Express, NestJS, etc.
 - **3 Modi**: Neu einrichten, DSN aktualisieren, Client-Code aktualisieren
 - **Cross-Platform** - Läuft auf Windows, Linux, macOS
 
-## Quick Start
+## Quick Start (Remote - Empfohlen)
+
+Führe das Client-Kit direkt aus dem Repository aus - ohne es vorher zu klonen:
+
+### Linux / macOS
+
+```bash
+# Im Projekt-Ordner ausführen
+curl -sSL https://raw.githubusercontent.com/YOUR_ORG/ApplicationErrorObservability/main/client-kit/remote-install.sh | bash
+
+# Mit DSN
+curl -sSL <URL>/remote-install.sh | bash -s -- --dsn "https://key@errors.observability.app.bauer-group.com/1"
+
+# Mit wget
+wget -qO- <URL>/remote-install.sh | bash -s -- --dsn "https://..."
+```
+
+### Windows (PowerShell)
+
+```powershell
+# Im Projekt-Ordner ausführen
+irm https://raw.githubusercontent.com/YOUR_ORG/ApplicationErrorObservability/main/client-kit/remote-install.ps1 | iex
+
+# Mit DSN (erst herunterladen, dann ausführen)
+Invoke-WebRequest -Uri "<URL>/remote-install.ps1" -OutFile install.ps1
+.\install.ps1 -Dsn "https://key@errors.observability.app.bauer-group.com/1"
+```
+
+### Mit Umgebungsvariable für eigenes Repo
+
+```bash
+# Eigene Repo-URL setzen
+export CLIENT_KIT_REPO_URL="https://raw.githubusercontent.com/DEIN_ORG/DEIN_REPO/main/client-kit"
+curl -sSL $CLIENT_KIT_REPO_URL/remote-install.sh | bash
+```
+
+## Lokale Installation
+
+Falls du das Repo bereits geklont hast:
 
 ### Option 1: Interaktiver Modus
 

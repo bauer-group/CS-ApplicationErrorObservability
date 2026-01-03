@@ -312,6 +312,7 @@ docker compose up -d
 - [Configuration Reference](docs/BUGSINK-CONFIGURATION.md)
 - [SDK Configuration](docs/BUGSINK-SDK-CONFIGURATION.md)
 - [Client SDK Examples](docs/CLIENT-SDK-EXAMPLES.md) - Integration examples for 10 languages
+- [Client-Kit](client-kit/README.md) - Automated SDK integration tool
 - [Sentry SDK Integration](docs/SENTRY-SDK-INTEGRATION.md)
 - [Complete SDK Reference](docs/SENTRY-SDK-COMPLETE-REFERENCE.md)
 
