@@ -1,3 +1,11 @@
+# [0.5.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.4.0...v0.5.0) (2026-01-03)
+
+
+### Features
+
+* Implement custom messaging backends for Jira Cloud and GitHub Issues ([0483dfb](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/0483dfbf650784201b7e6c0a2e74def6be9c838d))
+* Set default initial values for repository and labels in GitHub Issues configuration form ([1f1ce9c](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/1f1ce9ccf15a5e2b9d26a52ce6a3dfd0ac93b786))
+
 # [0.4.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.3.0...v0.4.0) (2026-01-03)
 
 
