@@ -1,3 +1,10 @@
+# [0.9.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.8.3...v0.9.0) (2026-01-03)
+
+
+### Features
+
+* Add 'Only New Issues' option to GitHub and Jira backends to prevent duplicates ([74acacc](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/74acacc11926c917605d227d61a019080c19e499))
+
 ## [0.8.3](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.8.2...v0.8.3) (2026-01-03)
 
 
