@@ -182,12 +182,14 @@ def project_messaging_service_edit(request, project_pk, service_pk):
 
     if request.method == 'POST':
         form = MessagingServiceConfigForm(project, request.POST, instance=instance)
-        kind = request.POST.get('kind', instance.kind)
-        ConfigFormClass = get_config_form_for_kind(kind)
+        # Always use the instance's kind - ignore any attempt to change it
+        ConfigFormClass = get_config_form_for_kind(instance.kind)
         config_form = ConfigFormClass(data=request.POST)
 
         if form.is_valid() and config_form.is_valid():
             service = form.save(commit=False)
+            # Ensure kind cannot be changed
+            service.kind = instance.kind
             service.config = json.dumps(config_form.get_config())
             service.save()
 
@@ -196,7 +198,13 @@ def project_messaging_service_edit(request, project_pk, service_pk):
 
     else:
         form = MessagingServiceConfigForm(project, instance=instance)
-        config_form = ConfigFormClass(config=json.loads(instance.config))
+        # Disable the kind dropdown for existing services - type cannot be changed
+        form.fields['kind'].disabled = True
+        form.fields['kind'].help_text = "Backend type cannot be changed. Delete and recreate the service to use a different backend."
+        try:
+            config_form = ConfigFormClass(config=json.loads(instance.config))
+        except (json.JSONDecodeError, KeyError):
+            config_form = ConfigFormClass()
 
     return render(request, 'projects/project_messaging_service_edit.html', {
         'project': project,
