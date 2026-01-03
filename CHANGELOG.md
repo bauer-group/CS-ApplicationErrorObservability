@@ -1,3 +1,10 @@
+## [0.1.2](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.1.1...v0.1.2) (2026-01-03)
+
+
+### Bug Fixes
+
+* Update ALLOWED_HOSTS to include IPv6 localhost address ([f514c72](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/f514c72d5e176d74f5e92fc24863e99611941222))
+
 ## [0.1.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.1.0...v0.1.1) (2026-01-03)
 
 
