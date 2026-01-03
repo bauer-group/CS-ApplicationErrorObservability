@@ -1,0 +1,896 @@
+#!/usr/bin/env python3
+"""
+Error Observability Client-Kit Installer
+=========================================
+
+Cross-platform installer for integrating Sentry SDK with your applications.
+Automatically detects project language and applies minimal, non-destructive changes.
+
+Usage:
+    python install.py                    # Interactive mode
+    python install.py --dsn <DSN>        # With DSN parameter
+    python install.py --update-dsn       # Update DSN only
+    python install.py --update-client    # Update client code from templates
+
+Requirements:
+    Python 3.7+
+"""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Optional, Dict, List, Tuple
+from dataclasses import dataclass
+from enum import Enum
+
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+class Language(Enum):
+    PYTHON = "python"
+    NODEJS = "nodejs"
+    TYPESCRIPT = "typescript"
+    JAVA = "java"
+    DOTNET = "dotnet"
+    GO = "go"
+    PHP = "php"
+    RUBY = "ruby"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class ProjectInfo:
+    language: Language
+    framework: Optional[str]
+    project_name: str
+    project_root: Path
+    package_manager: Optional[str]
+    config_files: List[Path]
+
+
+@dataclass
+class SentryConfig:
+    dsn: str
+    environment: str = "production"
+    release: Optional[str] = None
+
+
+# =============================================================================
+# LANGUAGE DETECTION
+# =============================================================================
+
+class LanguageDetector:
+    """Detects project language and framework based on files present."""
+
+    DETECTION_PATTERNS: Dict[Language, List[Tuple[str, Optional[str]]]] = {
+        Language.PYTHON: [
+            ("requirements.txt", None),
+            ("pyproject.toml", None),
+            ("setup.py", None),
+            ("Pipfile", None),
+            ("manage.py", "django"),
+            ("app.py", "flask"),
+            ("main.py", None),
+        ],
+        Language.NODEJS: [
+            ("package.json", None),
+        ],
+        Language.TYPESCRIPT: [
+            ("tsconfig.json", None),
+        ],
+        Language.JAVA: [
+            ("pom.xml", "maven"),
+            ("build.gradle", "gradle"),
+            ("build.gradle.kts", "gradle"),
+        ],
+        Language.DOTNET: [
+            ("*.csproj", None),
+            ("*.fsproj", None),
+            ("*.sln", None),
+        ],
+        Language.GO: [
+            ("go.mod", None),
+            ("go.sum", None),
+        ],
+        Language.PHP: [
+            ("composer.json", None),
+        ],
+        Language.RUBY: [
+            ("Gemfile", None),
+            ("*.gemspec", None),
+        ],
+    }
+
+    FRAMEWORK_DETECTION = {
+        Language.PYTHON: {
+            "django": ["manage.py", "settings.py"],
+            "flask": ["app.py"],
+            "fastapi": ["main.py"],
+        },
+        Language.NODEJS: {
+            "express": ["package.json"],  # Check package.json content
+            "nestjs": ["nest-cli.json"],
+            "nextjs": ["next.config.js", "next.config.mjs"],
+        },
+    }
+
+    @classmethod
+    def detect(cls, project_root: Path) -> ProjectInfo:
+        """Detect project language and framework."""
+        detected_language = Language.UNKNOWN
+        detected_framework = None
+        config_files = []
+        package_manager = None
+
+        # Check each language pattern
+        for language, patterns in cls.DETECTION_PATTERNS.items():
+            for pattern, framework in patterns:
+                if "*" in pattern:
+                    matches = list(project_root.glob(pattern))
+                    if matches:
+                        detected_language = language
+                        config_files.extend(matches)
+                        if framework:
+                            detected_framework = framework
+                        break
+                else:
+                    file_path = project_root / pattern
+                    if file_path.exists():
+                        detected_language = language
+                        config_files.append(file_path)
+                        if framework:
+                            detected_framework = framework
+                        break
+
+            if detected_language != Language.UNKNOWN:
+                break
+
+        # TypeScript detection (refine from nodejs)
+        if detected_language == Language.NODEJS:
+            if (project_root / "tsconfig.json").exists():
+                detected_language = Language.TYPESCRIPT
+                config_files.append(project_root / "tsconfig.json")
+
+        # Detect package manager
+        package_manager = cls._detect_package_manager(project_root, detected_language)
+
+        # Detect framework from package.json for Node.js
+        if detected_language in (Language.NODEJS, Language.TYPESCRIPT):
+            detected_framework = cls._detect_node_framework(project_root)
+
+        # Get project name from folder
+        project_name = project_root.name
+
+        return ProjectInfo(
+            language=detected_language,
+            framework=detected_framework,
+            project_name=project_name,
+            project_root=project_root,
+            package_manager=package_manager,
+            config_files=config_files,
+        )
+
+    @classmethod
+    def _detect_package_manager(cls, root: Path, language: Language) -> Optional[str]:
+        """Detect the package manager for the project."""
+        managers = {
+            Language.PYTHON: [
+                ("poetry.lock", "poetry"),
+                ("Pipfile.lock", "pipenv"),
+                ("requirements.txt", "pip"),
+            ],
+            Language.NODEJS: [
+                ("pnpm-lock.yaml", "pnpm"),
+                ("yarn.lock", "yarn"),
+                ("package-lock.json", "npm"),
+            ],
+            Language.TYPESCRIPT: [
+                ("pnpm-lock.yaml", "pnpm"),
+                ("yarn.lock", "yarn"),
+                ("package-lock.json", "npm"),
+            ],
+        }
+
+        for lock_file, manager in managers.get(language, []):
+            if (root / lock_file).exists():
+                return manager
+
+        return None
+
+    @classmethod
+    def _detect_node_framework(cls, root: Path) -> Optional[str]:
+        """Detect Node.js framework from package.json."""
+        package_json = root / "package.json"
+        if not package_json.exists():
+            return None
+
+        try:
+            with open(package_json, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+
+            if "@nestjs/core" in deps:
+                return "nestjs"
+            if "next" in deps:
+                return "nextjs"
+            if "express" in deps:
+                return "express"
+            if "fastify" in deps:
+                return "fastify"
+            if "koa" in deps:
+                return "koa"
+        except (json.JSONDecodeError, IOError):
+            pass
+
+        return None
+
+
+# =============================================================================
+# TEMPLATE MANAGER
+# =============================================================================
+
+class TemplateManager:
+    """Manages templates for different languages."""
+
+    def __init__(self, templates_dir: Path):
+        self.templates_dir = templates_dir
+
+    def get_template_path(self, language: Language) -> Path:
+        """Get the template directory for a language."""
+        return self.templates_dir / language.value
+
+    def get_template_files(self, language: Language) -> List[Path]:
+        """Get all template files for a language."""
+        template_path = self.get_template_path(language)
+        if not template_path.exists():
+            return []
+        return list(template_path.glob("**/*"))
+
+    def render_template(self, template_path: Path, config: SentryConfig) -> str:
+        """Render a template with the given configuration."""
+        with open(template_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Replace placeholders
+        replacements = {
+            "{{DSN}}": config.dsn,
+            "{{ENVIRONMENT}}": config.environment,
+            "{{RELEASE}}": config.release or "",
+            "${SENTRY_DSN}": config.dsn,
+        }
+
+        for placeholder, value in replacements.items():
+            content = content.replace(placeholder, value)
+
+        return content
+
+
+# =============================================================================
+# INSTALLERS
+# =============================================================================
+
+class BaseInstaller:
+    """Base class for language-specific installers."""
+
+    def __init__(self, project: ProjectInfo, config: SentryConfig, templates: TemplateManager):
+        self.project = project
+        self.config = config
+        self.templates = templates
+
+    def install(self) -> bool:
+        """Run the installation process."""
+        raise NotImplementedError
+
+    def update_dsn(self) -> bool:
+        """Update only the DSN in existing configuration."""
+        raise NotImplementedError
+
+    def update_client(self) -> bool:
+        """Update client code from templates."""
+        raise NotImplementedError
+
+    def _run_command(self, cmd: List[str], cwd: Optional[Path] = None) -> bool:
+        """Run a shell command."""
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=cwd or self.project.project_root,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                print(f"  Warning: {' '.join(cmd)} failed: {result.stderr}")
+                return False
+            return True
+        except Exception as e:
+            print(f"  Error running command: {e}")
+            return False
+
+    def _copy_template(self, template_name: str, dest_path: Path) -> bool:
+        """Copy a template file to the destination."""
+        template_path = self.templates.get_template_path(self.project.language) / template_name
+        if not template_path.exists():
+            print(f"  Template not found: {template_path}")
+            return False
+
+        content = self.templates.render_template(template_path, self.config)
+
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        print(f"  Created: {dest_path.relative_to(self.project.project_root)}")
+        return True
+
+    def _update_env_file(self, env_var: str = "SENTRY_DSN") -> bool:
+        """Add or update DSN in .env file."""
+        env_file = self.project.project_root / ".env"
+        env_example = self.project.project_root / ".env.example"
+
+        # Update .env
+        self._update_env_var(env_file, env_var, self.config.dsn)
+
+        # Also update .env.example with placeholder
+        if env_example.exists():
+            self._update_env_var(env_example, env_var, "https://your-key@your-host/1", only_if_missing=True)
+
+        return True
+
+    def _update_env_var(self, env_file: Path, var_name: str, value: str, only_if_missing: bool = False):
+        """Update or add an environment variable in a .env file."""
+        lines = []
+        found = False
+
+        if env_file.exists():
+            with open(env_file, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            for i, line in enumerate(lines):
+                if line.strip().startswith(f"{var_name}="):
+                    if not only_if_missing:
+                        lines[i] = f"{var_name}={value}\n"
+                    found = True
+                    break
+
+        if not found:
+            if lines and not lines[-1].endswith("\n"):
+                lines.append("\n")
+            lines.append(f"\n# Error Observability\n{var_name}={value}\n")
+
+        with open(env_file, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+
+        print(f"  Updated: {env_file.name}")
+
+
+class PythonInstaller(BaseInstaller):
+    """Installer for Python projects."""
+
+    def install(self) -> bool:
+        print("\n  Installing Sentry SDK for Python...")
+
+        # Install package
+        if self.project.package_manager == "poetry":
+            self._run_command(["poetry", "add", "sentry-sdk"])
+        elif self.project.package_manager == "pipenv":
+            self._run_command(["pipenv", "install", "sentry-sdk"])
+        else:
+            self._run_command([sys.executable, "-m", "pip", "install", "sentry-sdk"])
+            # Add to requirements.txt if exists
+            req_file = self.project.project_root / "requirements.txt"
+            if req_file.exists():
+                with open(req_file, "a", encoding="utf-8") as f:
+                    f.write("\nsentry-sdk>=2.0.0\n")
+                print("  Added sentry-sdk to requirements.txt")
+
+        # Copy template files
+        self._copy_template("sentry_config.py", self.project.project_root / "sentry_config.py")
+
+        # Update .env
+        self._update_env_file()
+
+        print("\n  Integration complete!")
+        print("  Add this to your application entry point:")
+        print("  ─────────────────────────────────────────")
+        print("  from sentry_config import init_sentry")
+        print("  init_sentry()")
+        print("  ─────────────────────────────────────────")
+
+        return True
+
+    def update_dsn(self) -> bool:
+        self._update_env_file()
+
+        # Also update sentry_config.py if it has hardcoded DSN
+        config_file = self.project.project_root / "sentry_config.py"
+        if config_file.exists():
+            with open(config_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # Replace DSN pattern
+            content = re.sub(
+                r'dsn\s*=\s*["\'][^"\']+["\']',
+                f'dsn=os.getenv("SENTRY_DSN", "{self.config.dsn}")',
+                content
+            )
+
+            with open(config_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            print(f"  Updated: sentry_config.py")
+
+        return True
+
+    def update_client(self) -> bool:
+        self._copy_template("sentry_config.py", self.project.project_root / "sentry_config.py")
+        return True
+
+
+class NodeInstaller(BaseInstaller):
+    """Installer for Node.js/TypeScript projects."""
+
+    def install(self) -> bool:
+        lang_name = "TypeScript" if self.project.language == Language.TYPESCRIPT else "Node.js"
+        print(f"\n  Installing Sentry SDK for {lang_name}...")
+
+        # Install packages
+        packages = ["@sentry/node"]
+
+        if self.project.package_manager == "pnpm":
+            self._run_command(["pnpm", "add"] + packages)
+        elif self.project.package_manager == "yarn":
+            self._run_command(["yarn", "add"] + packages)
+        else:
+            self._run_command(["npm", "install", "--save"] + packages)
+
+        # Copy template files
+        if self.project.language == Language.TYPESCRIPT:
+            self._copy_template("sentry.config.ts", self.project.project_root / "src" / "sentry.config.ts")
+        else:
+            self._copy_template("sentry.config.js", self.project.project_root / "sentry.config.js")
+
+        # Update .env
+        self._update_env_file()
+
+        print("\n  Integration complete!")
+        print("  Add this at the TOP of your entry file:")
+        print("  ─────────────────────────────────────────")
+        if self.project.language == Language.TYPESCRIPT:
+            print('  import "./sentry.config";')
+        else:
+            print('  require("./sentry.config");')
+        print("  ─────────────────────────────────────────")
+
+        return True
+
+    def update_dsn(self) -> bool:
+        self._update_env_file()
+        return True
+
+    def update_client(self) -> bool:
+        if self.project.language == Language.TYPESCRIPT:
+            self._copy_template("sentry.config.ts", self.project.project_root / "src" / "sentry.config.ts")
+        else:
+            self._copy_template("sentry.config.js", self.project.project_root / "sentry.config.js")
+        return True
+
+
+class DotNetInstaller(BaseInstaller):
+    """Installer for .NET projects."""
+
+    def install(self) -> bool:
+        print("\n  Installing Sentry SDK for .NET...")
+
+        # Find .csproj file
+        csproj_files = list(self.project.project_root.glob("**/*.csproj"))
+        if csproj_files:
+            for csproj in csproj_files:
+                self._run_command(["dotnet", "add", str(csproj), "package", "Sentry"])
+
+        # Copy template
+        self._copy_template("SentryConfig.cs", self.project.project_root / "SentryConfig.cs")
+
+        # Update environment
+        self._update_env_file()
+
+        print("\n  Integration complete!")
+        print("  Add this to your Program.cs:")
+        print("  ─────────────────────────────────────────")
+        print("  builder.WebHost.UseSentry();")
+        print("  // Or for console apps:")
+        print("  SentryConfig.Init();")
+        print("  ─────────────────────────────────────────")
+
+        return True
+
+    def update_dsn(self) -> bool:
+        self._update_env_file()
+        return True
+
+    def update_client(self) -> bool:
+        self._copy_template("SentryConfig.cs", self.project.project_root / "SentryConfig.cs")
+        return True
+
+
+class GoInstaller(BaseInstaller):
+    """Installer for Go projects."""
+
+    def install(self) -> bool:
+        print("\n  Installing Sentry SDK for Go...")
+
+        self._run_command(["go", "get", "github.com/getsentry/sentry-go"])
+
+        self._copy_template("sentry.go", self.project.project_root / "pkg" / "sentry" / "sentry.go")
+
+        self._update_env_file()
+
+        print("\n  Integration complete!")
+        print("  Add this to your main.go:")
+        print("  ─────────────────────────────────────────")
+        print('  import "your-module/pkg/sentry"')
+        print("  ")
+        print("  func main() {")
+        print("      sentry.Init()")
+        print("      defer sentry.Flush()")
+        print("      // ...")
+        print("  }")
+        print("  ─────────────────────────────────────────")
+
+        return True
+
+    def update_dsn(self) -> bool:
+        self._update_env_file()
+        return True
+
+    def update_client(self) -> bool:
+        self._copy_template("sentry.go", self.project.project_root / "pkg" / "sentry" / "sentry.go")
+        return True
+
+
+class PHPInstaller(BaseInstaller):
+    """Installer for PHP projects."""
+
+    def install(self) -> bool:
+        print("\n  Installing Sentry SDK for PHP...")
+
+        self._run_command(["composer", "require", "sentry/sentry"])
+
+        self._copy_template("sentry.php", self.project.project_root / "config" / "sentry.php")
+
+        self._update_env_file()
+
+        print("\n  Integration complete!")
+        print("  Add this to your bootstrap/entry file:")
+        print("  ─────────────────────────────────────────")
+        print("  require_once 'config/sentry.php';")
+        print("  ─────────────────────────────────────────")
+
+        return True
+
+    def update_dsn(self) -> bool:
+        self._update_env_file()
+        return True
+
+    def update_client(self) -> bool:
+        self._copy_template("sentry.php", self.project.project_root / "config" / "sentry.php")
+        return True
+
+
+class RubyInstaller(BaseInstaller):
+    """Installer for Ruby projects."""
+
+    def install(self) -> bool:
+        print("\n  Installing Sentry SDK for Ruby...")
+
+        # Add to Gemfile
+        gemfile = self.project.project_root / "Gemfile"
+        if gemfile.exists():
+            with open(gemfile, "a", encoding="utf-8") as f:
+                f.write('\n\n# Error Observability\ngem "sentry-ruby"\n')
+            print("  Added sentry-ruby to Gemfile")
+            self._run_command(["bundle", "install"])
+
+        self._copy_template("sentry.rb", self.project.project_root / "config" / "initializers" / "sentry.rb")
+
+        self._update_env_file()
+
+        print("\n  Integration complete!")
+        print("  For Rails: The initializer will load automatically.")
+        print("  For other apps, add:")
+        print("  ─────────────────────────────────────────")
+        print("  require_relative 'config/initializers/sentry'")
+        print("  ─────────────────────────────────────────")
+
+        return True
+
+    def update_dsn(self) -> bool:
+        self._update_env_file()
+        return True
+
+    def update_client(self) -> bool:
+        self._copy_template("sentry.rb", self.project.project_root / "config" / "initializers" / "sentry.rb")
+        return True
+
+
+class JavaInstaller(BaseInstaller):
+    """Installer for Java projects."""
+
+    def install(self) -> bool:
+        print("\n  Installing Sentry SDK for Java...")
+
+        # Detect build tool and add dependency
+        pom = self.project.project_root / "pom.xml"
+        gradle = self.project.project_root / "build.gradle"
+        gradle_kts = self.project.project_root / "build.gradle.kts"
+
+        if pom.exists():
+            print("  Add this to your pom.xml <dependencies>:")
+            print("  ─────────────────────────────────────────")
+            print("  <dependency>")
+            print("      <groupId>io.sentry</groupId>")
+            print("      <artifactId>sentry</artifactId>")
+            print("      <version>7.0.0</version>")
+            print("  </dependency>")
+            print("  ─────────────────────────────────────────")
+        elif gradle.exists() or gradle_kts.exists():
+            print("  Add this to your build.gradle dependencies:")
+            print("  ─────────────────────────────────────────")
+            print("  implementation 'io.sentry:sentry:7.0.0'")
+            print("  ─────────────────────────────────────────")
+
+        self._copy_template("SentryConfig.java",
+                           self.project.project_root / "src" / "main" / "java" / "SentryConfig.java")
+
+        self._update_env_file()
+
+        print("\n  Call SentryConfig.init() in your main method.")
+
+        return True
+
+    def update_dsn(self) -> bool:
+        self._update_env_file()
+        return True
+
+    def update_client(self) -> bool:
+        self._copy_template("SentryConfig.java",
+                           self.project.project_root / "src" / "main" / "java" / "SentryConfig.java")
+        return True
+
+
+# =============================================================================
+# MAIN INSTALLER
+# =============================================================================
+
+class ClientKitInstaller:
+    """Main installer orchestrator."""
+
+    INSTALLERS = {
+        Language.PYTHON: PythonInstaller,
+        Language.NODEJS: NodeInstaller,
+        Language.TYPESCRIPT: NodeInstaller,
+        Language.JAVA: JavaInstaller,
+        Language.DOTNET: DotNetInstaller,
+        Language.GO: GoInstaller,
+        Language.PHP: PHPInstaller,
+        Language.RUBY: RubyInstaller,
+    }
+
+    def __init__(self):
+        # Determine paths
+        self.script_dir = Path(__file__).parent.resolve()
+        self.templates_dir = self.script_dir / "templates"
+        self.project_root = Path.cwd()
+
+        self.templates = TemplateManager(self.templates_dir)
+        self.project: Optional[ProjectInfo] = None
+        self.config: Optional[SentryConfig] = None
+
+    def run(self, args: argparse.Namespace):
+        """Run the installer based on arguments."""
+        print("=" * 60)
+        print("  Error Observability - Client Kit Installer")
+        print("=" * 60)
+
+        # Detect project
+        self.project = LanguageDetector.detect(self.project_root)
+
+        print(f"\n  Project: {self.project.project_name}")
+        print(f"  Language: {self.project.language.value}")
+        if self.project.framework:
+            print(f"  Framework: {self.project.framework}")
+        if self.project.package_manager:
+            print(f"  Package Manager: {self.project.package_manager}")
+
+        if self.project.language == Language.UNKNOWN:
+            print("\n  Error: Could not detect project language.")
+            print("  Supported: Python, Node.js, TypeScript, Java, .NET, Go, PHP, Ruby")
+            return 1
+
+        # Get or prompt for DSN
+        dsn = args.dsn or os.getenv("SENTRY_DSN")
+
+        if not dsn and not args.update_client:
+            dsn = self._prompt_dsn()
+
+        if dsn:
+            self.config = SentryConfig(
+                dsn=dsn,
+                environment=args.environment or "production",
+                release=args.release,
+            )
+
+        # Determine action
+        if args.update_dsn:
+            return self._update_dsn()
+        elif args.update_client:
+            return self._update_client()
+        else:
+            return self._interactive_menu()
+
+    def _prompt_dsn(self) -> str:
+        """Prompt user for DSN."""
+        print("\n  DSN not found in environment.")
+        print("  Get your DSN from: Project Settings > Client Keys")
+        print("")
+        dsn = input("  Enter DSN (or press Enter to skip): ").strip()
+        return dsn
+
+    def _interactive_menu(self) -> int:
+        """Show interactive menu."""
+        print("\n  What would you like to do?")
+        print("  ─────────────────────────────────────────")
+        print("  1. Set up new integration")
+        print("  2. Update DSN only")
+        print("  3. Update client code from templates")
+        print("  4. Exit")
+        print("")
+
+        choice = input("  Enter choice [1-4]: ").strip()
+
+        if choice == "1":
+            return self._install()
+        elif choice == "2":
+            return self._update_dsn()
+        elif choice == "3":
+            return self._update_client()
+        else:
+            print("  Exiting.")
+            return 0
+
+    def _get_installer(self) -> Optional[BaseInstaller]:
+        """Get the appropriate installer for the detected language."""
+        installer_class = self.INSTALLERS.get(self.project.language)
+        if not installer_class:
+            print(f"\n  Error: No installer available for {self.project.language.value}")
+            return None
+
+        return installer_class(self.project, self.config, self.templates)
+
+    def _install(self) -> int:
+        """Run full installation."""
+        if not self.config or not self.config.dsn:
+            print("\n  Error: DSN is required for installation.")
+            return 1
+
+        installer = self._get_installer()
+        if not installer:
+            return 1
+
+        success = installer.install()
+        return 0 if success else 1
+
+    def _update_dsn(self) -> int:
+        """Update DSN only."""
+        if not self.config or not self.config.dsn:
+            print("\n  Error: DSN is required.")
+            return 1
+
+        installer = self._get_installer()
+        if not installer:
+            return 1
+
+        print("\n  Updating DSN...")
+        success = installer.update_dsn()
+
+        if success:
+            print("\n  DSN updated successfully!")
+
+        return 0 if success else 1
+
+    def _update_client(self) -> int:
+        """Update client code from templates."""
+        # For update, we need to read existing DSN
+        if not self.config:
+            dsn = os.getenv("SENTRY_DSN", "")
+            env_file = self.project.project_root / ".env"
+            if env_file.exists():
+                with open(env_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.startswith("SENTRY_DSN="):
+                            dsn = line.split("=", 1)[1].strip()
+                            break
+
+            self.config = SentryConfig(dsn=dsn)
+
+        installer = self._get_installer()
+        if not installer:
+            return 1
+
+        print("\n  Updating client code from templates...")
+        success = installer.update_client()
+
+        if success:
+            print("\n  Client code updated successfully!")
+
+        return 0 if success else 1
+
+
+# =============================================================================
+# CLI
+# =============================================================================
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Error Observability Client Kit - SDK Integration Tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python install.py                          # Interactive mode
+  python install.py --dsn "https://..."      # Install with DSN
+  python install.py --update-dsn --dsn "..." # Update DSN only
+  python install.py --update-client          # Update client code
+
+Environment Variables:
+  SENTRY_DSN        - Sentry/Bugsink DSN
+  SENTRY_ENVIRONMENT - Environment name (default: production)
+        """
+    )
+
+    parser.add_argument(
+        "--dsn",
+        help="Sentry/Bugsink DSN"
+    )
+    parser.add_argument(
+        "--environment", "-e",
+        default="production",
+        help="Environment name (default: production)"
+    )
+    parser.add_argument(
+        "--release", "-r",
+        help="Release version"
+    )
+    parser.add_argument(
+        "--update-dsn",
+        action="store_true",
+        help="Only update the DSN in existing configuration"
+    )
+    parser.add_argument(
+        "--update-client",
+        action="store_true",
+        help="Update client code from templates"
+    )
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        help="Project root directory (default: current directory)"
+    )
+
+    args = parser.parse_args()
+
+    if args.project_root:
+        os.chdir(args.project_root)
+
+    installer = ClientKitInstaller()
+    sys.exit(installer.run(args))
+
+
+if __name__ == "__main__":
+    main()

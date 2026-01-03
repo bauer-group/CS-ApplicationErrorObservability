@@ -136,7 +136,58 @@ Sentry.init({
 });
 ```
 
-See [docs/SENTRY-SDK-COMPLETE-REFERENCE.md](docs/SENTRY-SDK-COMPLETE-REFERENCE.md) for all languages and frameworks.
+### More Languages
+
+Complete integration examples are available for **10 languages**:
+
+| Language | Example |
+|----------|---------|
+| Python | [examples/python_example.py](examples/python_example.py) |
+| Node.js | [examples/nodejs_example.js](examples/nodejs_example.js) |
+| TypeScript | [examples/typescript_example.ts](examples/typescript_example.ts) |
+| Java | [examples/JavaExample.java](examples/JavaExample.java) |
+| C# / .NET | [examples/DotNetExample.cs](examples/DotNetExample.cs) |
+| Go | [examples/go_example.go](examples/go_example.go) |
+| PHP | [examples/php_example.php](examples/php_example.php) |
+| Ruby | [examples/ruby_example.rb](examples/ruby_example.rb) |
+| Rust | [examples/rust_example.rs](examples/rust_example.rs) |
+| C / C++ | [examples/cpp_example.cpp](examples/cpp_example.cpp) |
+
+Each example includes:
+
+- Full SDK initialization with configuration
+- User context and breadcrumbs
+- Error capturing and custom messages
+- Performance monitoring (transactions/spans)
+- Framework-specific integrations
+
+See [docs/CLIENT-SDK-EXAMPLES.md](docs/CLIENT-SDK-EXAMPLES.md) for the complete integration guide.
+
+### Automated Integration (Client-Kit)
+
+Use the Client-Kit for quick, automated SDK integration:
+
+```bash
+# In your project directory
+/path/to/client-kit/install.sh --dsn "https://key@errors.your-domain.com/1"
+```
+
+The installer will:
+
+1. Detect your project language automatically
+2. Install the SDK dependencies
+3. Create a minimal configuration file
+4. Add DSN to your `.env` file
+
+**Three modes available:**
+
+| Mode          | Command                          | Description              |
+|---------------|----------------------------------|--------------------------|
+| New Setup     | `./install.sh`                   | Full installation        |
+| Update DSN    | `./install.sh --update-dsn`      | Change endpoint URL only |
+| Update Client | `./install.sh --update-client`   | Refresh templates        |
+
+See [client-kit/README.md](client-kit/README.md) for detailed documentation.
 
 ## Configuration
 
@@ -211,14 +262,41 @@ docker compose up -d
 ├── docker-compose.yml              # Standalone deployment
 ├── docker-compose.traefik.yml      # Traefik deployment
 ├── docker-compose.development.yml  # Local development
-├── .env.example                # Configuration template
-├── .env                        # Local configuration (git-ignored)
+├── .env.example                    # Configuration template
+├── .env                            # Local configuration (git-ignored)
 ├── docs/
 │   ├── BUGSINK-CONFIGURATION.md
 │   ├── BUGSINK-QUICKSTART.md
 │   ├── BUGSINK-SDK-CONFIGURATION.md
+│   ├── CLIENT-SDK-EXAMPLES.md      # SDK integration guide
 │   ├── SENTRY-SDK-INTEGRATION.md
 │   └── SENTRY-SDK-COMPLETE-REFERENCE.md
+├── client-kit/                     # SDK Integration Tool
+│   ├── install.py                  # Main installer (Python)
+│   ├── install.sh                  # Shell wrapper
+│   ├── install.ps1                 # PowerShell wrapper
+│   ├── install.cmd                 # Windows batch wrapper
+│   ├── templates/                  # Minimal integration templates
+│   │   ├── python/
+│   │   ├── nodejs/
+│   │   ├── typescript/
+│   │   ├── java/
+│   │   ├── dotnet/
+│   │   ├── go/
+│   │   ├── php/
+│   │   └── ruby/
+│   └── README.md
+├── examples/                       # Full SDK examples (reference)
+│   ├── python_example.py
+│   ├── nodejs_example.js
+│   ├── typescript_example.ts
+│   ├── JavaExample.java
+│   ├── DotNetExample.cs
+│   ├── go_example.go
+│   ├── php_example.php
+│   ├── ruby_example.rb
+│   ├── rust_example.rs
+│   └── cpp_example.cpp
 ├── tools/
 │   ├── Dockerfile              # Tools container
 │   ├── run.cmd                 # Windows launcher
@@ -233,6 +311,7 @@ docker compose up -d
 - [Quick Start Guide](docs/BUGSINK-QUICKSTART.md)
 - [Configuration Reference](docs/BUGSINK-CONFIGURATION.md)
 - [SDK Configuration](docs/BUGSINK-SDK-CONFIGURATION.md)
+- [Client SDK Examples](docs/CLIENT-SDK-EXAMPLES.md) - Integration examples for 10 languages
 - [Sentry SDK Integration](docs/SENTRY-SDK-INTEGRATION.md)
 - [Complete SDK Reference](docs/SENTRY-SDK-COMPLETE-REFERENCE.md)
 
