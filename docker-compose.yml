@@ -2,7 +2,12 @@ services:
 
 ### Application Services ###
   bugsink-server:
-    image: bugsink/bugsink:${BUGSINK_VERSION:-2}
+    # image: bugsink/bugsink:${BUGSINK_VERSION:-2}
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+      args:
+        - BUGSINK_VERSION=${BUGSINK_VERSION:-2}    
     restart: unless-stopped
     container_name: BUGSINK_SERVER
     healthcheck:
