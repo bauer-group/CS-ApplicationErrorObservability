@@ -3,275 +3,231 @@
 Backend Registration Patch for Bugsink v2
 ==========================================
 
-This script patches Bugsink v2 to register the custom messaging backends
+This script patches Bugsink to register custom messaging backends
 (Jira Cloud and GitHub Issues) during Docker image build.
 
-Bugsink v2 uses:
-- MessagingServiceConfig model (not MessagingService)
-- Dynamic KIND_CHOICES via get_alert_service_kind_choices()
-- BACKENDS dict in alerts/service_backends/__init__.py
+Bugsink registers backends in alerts/models.py via:
+1. Import statements for backend classes
+2. get_alert_service_kind_choices() - returns list of (kind, display_name) tuples
+3. get_alert_service_backend_class(kind) - factory function mapping kind to class
 
-This script is run once during Docker build and then removed.
+This script patches models.py to add our custom backends.
 """
 
 import os
-import re
 import sys
+import re
+import traceback
 
-# Paths to patch
+# Paths
 ALERTS_DIR = "/app/alerts"
 SERVICE_BACKENDS_DIR = os.path.join(ALERTS_DIR, "service_backends")
-INIT_FILE = os.path.join(SERVICE_BACKENDS_DIR, "__init__.py")
+MODELS_FILE = os.path.join(ALERTS_DIR, "models.py")
 
 
-def verify_files():
-    """Verify that backend files exist."""
-    print("Verifying backend files...")
+def verify_backend_files():
+    """Verify that our backend files were copied."""
+    print("Step 1: Verifying backend files...")
 
     jira_file = os.path.join(SERVICE_BACKENDS_DIR, "jira_cloud.py")
     github_file = os.path.join(SERVICE_BACKENDS_DIR, "github_issues.py")
 
-    files_ok = True
+    jira_ok = os.path.exists(jira_file)
+    github_ok = os.path.exists(github_file)
 
-    if os.path.exists(jira_file):
-        print(f"  [OK] {jira_file}")
-    else:
-        print(f"  [MISSING] {jira_file}")
-        files_ok = False
+    print(f"  jira_cloud.py: {'OK' if jira_ok else 'MISSING'}")
+    print(f"  github_issues.py: {'OK' if github_ok else 'MISSING'}")
 
-    if os.path.exists(github_file):
-        print(f"  [OK] {github_file}")
-    else:
-        print(f"  [MISSING] {github_file}")
-        files_ok = False
-
-    return files_ok
+    return jira_ok and github_ok
 
 
-def patch_init():
-    """Register backends in __init__.py.
+def patch_models_file():
+    """Patch alerts/models.py to register our backends."""
+    print("\nStep 2: Patching alerts/models.py...")
 
-    Bugsink v2 uses a BACKENDS dict and get_alert_service_kind_choices() function
-    to dynamically register backends.
-    """
-    print("Patching alerts/service_backends/__init__.py...")
+    if not os.path.exists(MODELS_FILE):
+        print(f"  [ERROR] {MODELS_FILE} does not exist!")
+        return False
 
-    if not os.path.exists(INIT_FILE):
-        print(f"  [ERROR] {INIT_FILE} not found")
-        print("  Creating new __init__.py with all backends...")
-
-        content = '''"""
-Bugsink Messaging Service Backends
-
-Extended with custom backends: Jira Cloud, GitHub Issues
-"""
-
-from .discord import DiscordBackend
-from .mattermost import MattermostBackend
-from .slack import SlackBackend
-from .jira_cloud import JiraCloudBackend
-from .github_issues import GitHubIssuesBackend
-
-
-BACKENDS = {
-    "discord": DiscordBackend,
-    "mattermost": MattermostBackend,
-    "slack": SlackBackend,
-    "jira_cloud": JiraCloudBackend,
-    "github_issues": GitHubIssuesBackend,
-}
-
-
-def get_alert_service_kind_choices():
-    """Return choices for MessagingServiceConfig.kind field.
-
-    This is a callable to avoid non-DB-affecting migrations for adding new kinds.
-    """
-    return [
-        ("discord", "Discord"),
-        ("mattermost", "Mattermost"),
-        ("slack", "Slack"),
-        ("jira_cloud", "Jira Cloud"),
-        ("github_issues", "GitHub Issues"),
-    ]
-
-
-def get_backend(kind):
-    """Get backend class by kind."""
-    return BACKENDS.get(kind)
-'''
-        with open(INIT_FILE, "w", encoding="utf-8") as f:
-            f.write(content)
-        print("  [OK] Created new __init__.py with all backends")
-        return True
-
-    # Read existing file
-    with open(INIT_FILE, "r", encoding="utf-8") as f:
+    with open(MODELS_FILE, "r", encoding="utf-8") as f:
         content = f.read()
 
+    print(f"  Original file size: {len(content)} bytes")
+
     # Check if already patched
-    if "jira_cloud" in content and "github_issues" in content:
-        print("  [OK] Already patched, skipping")
+    if "jira_cloud" in content or "JiraCloudBackend" in content:
+        print("  [OK] Already patched")
         return True
 
     original_content = content
-    modified = False
 
-    # Step 1: Add imports for new backends
-    import_lines = """
-from .jira_cloud import JiraCloudBackend
-from .github_issues import GitHubIssuesBackend
-"""
+    # === STEP A: Add imports ===
+    # Find the last backend import and add ours after it
+    import_pattern = r'(from \.service_backends\.(?:slack|discord|mattermost) import \w+Backend)'
 
-    # Find last import line and add after it
-    import_patterns = [
-        r'(from \.slack import SlackBackend)',
-        r'(from \.mattermost import MattermostBackend)',
-        r'(from \.discord import DiscordBackend)',
-    ]
+    import_matches = list(re.finditer(import_pattern, content))
+    if import_matches:
+        last_import = import_matches[-1]
+        insert_pos = last_import.end()
 
-    for pattern in import_patterns:
-        if re.search(pattern, content):
-            content = re.sub(pattern, r'\1' + import_lines, content)
-            modified = True
-            print("  [OK] Added import statements")
-            break
+        new_imports = """
+from .service_backends.jira_cloud import JiraCloudBackend
+from .service_backends.github_issues import GitHubIssuesBackend"""
 
-    if not modified:
-        # Fallback: add imports at the beginning
-        content = import_lines.strip() + "\n\n" + content
-        modified = True
-        print("  [OK] Added import statements (fallback)")
-
-    # Step 2: Add to BACKENDS dict
-    backends_addition = '''    "jira_cloud": JiraCloudBackend,
-    "github_issues": GitHubIssuesBackend,
-'''
-
-    # Pattern to find BACKENDS dict and add before closing brace
-    # Match the last entry before }
-    backends_pattern = r'(BACKENDS\s*=\s*\{[^}]*"(?:slack|mattermost|discord)":\s*\w+Backend,?\s*)(})'
-
-    if re.search(backends_pattern, content, re.DOTALL):
-        content = re.sub(
-            backends_pattern,
-            r'\1' + backends_addition + r'\2',
-            content,
-            flags=re.DOTALL
-        )
-        print("  [OK] Added backends to BACKENDS dict")
+        content = content[:insert_pos] + new_imports + content[insert_pos:]
+        print("  [OK] Added import statements")
     else:
-        print("  [WARN] Could not find BACKENDS dict pattern")
+        print("  [WARN] Could not find backend imports, trying alternative...")
+        # Fallback: add after all imports
+        if "from .service_backends" in content:
+            # Find the service_backends import section
+            lines = content.split('\n')
+            insert_idx = 0
+            for i, line in enumerate(lines):
+                if 'from .service_backends' in line:
+                    insert_idx = i + 1
 
-    # Step 3: Add to get_alert_service_kind_choices() function
-    choices_addition = '''        ("jira_cloud", "Jira Cloud"),
+            lines.insert(insert_idx, "from .service_backends.jira_cloud import JiraCloudBackend")
+            lines.insert(insert_idx + 1, "from .service_backends.github_issues import GitHubIssuesBackend")
+            content = '\n'.join(lines)
+            print("  [OK] Added import statements (fallback)")
+
+    # === STEP B: Update get_alert_service_kind_choices() ===
+    # Find the function and add our choices
+    choices_pattern = r'(def get_alert_service_kind_choices\(\):.*?return\s*\[)(.*?)(\])'
+
+    def add_choices(match):
+        prefix = match.group(1)
+        existing = match.group(2)
+        suffix = match.group(3)
+
+        # Add our choices
+        new_choices = '''
+        ("jira_cloud", "Jira Cloud"),
         ("github_issues", "GitHub Issues"),
-'''
+    '''
+        return prefix + existing.rstrip().rstrip(',') + ',' + new_choices + suffix
 
-    # Pattern to find the choices list and add before closing bracket
-    choices_pattern = r'(get_alert_service_kind_choices.*?return\s*\[[^\]]*\("(?:slack|mattermost|discord)",\s*"[^"]+"\),?\s*)(\])'
-
-    if re.search(choices_pattern, content, re.DOTALL):
-        content = re.sub(
-            choices_pattern,
-            r'\1' + choices_addition + r'\2',
-            content,
-            flags=re.DOTALL
-        )
-        print("  [OK] Added choices to get_alert_service_kind_choices()")
+    content, count = re.subn(choices_pattern, add_choices, content, flags=re.DOTALL)
+    if count > 0:
+        print("  [OK] Updated get_alert_service_kind_choices()")
     else:
-        print("  [WARN] Could not find get_alert_service_kind_choices() pattern")
+        print("  [WARN] Could not find get_alert_service_kind_choices()")
+
+    # === STEP C: Update get_alert_service_backend_class() ===
+    # Find the function and add our backends before the raise statement
+    backend_class_pattern = r'(def get_alert_service_backend_class\(kind\):.*?)(raise ValueError)'
+
+    def add_backends(match):
+        existing = match.group(1)
+        raise_stmt = match.group(2)
+
+        new_backends = '''    if kind == "jira_cloud":
+        return JiraCloudBackend
+    if kind == "github_issues":
+        return GitHubIssuesBackend
+    '''
+        return existing + new_backends + raise_stmt
+
+    content, count = re.subn(backend_class_pattern, add_backends, content, flags=re.DOTALL)
+    if count > 0:
+        print("  [OK] Updated get_alert_service_backend_class()")
+    else:
+        print("  [WARN] Could not find get_alert_service_backend_class()")
 
     # Write the patched content
     if content != original_content:
-        with open(INIT_FILE, "w", encoding="utf-8") as f:
+        with open(MODELS_FILE, "w", encoding="utf-8") as f:
             f.write(content)
-        print("  [OK] Successfully patched __init__.py")
+        print(f"  Patched file size: {len(content)} bytes")
+        print("  [OK] models.py patched successfully")
         return True
     else:
-        print("  [WARN] No changes made to __init__.py")
+        print("  [WARN] No changes made to models.py")
         return False
 
 
-def verify_patch():
-    """Verify the patch was applied correctly."""
-    print("Verifying patch...")
+def verify_syntax():
+    """Verify the patched file has valid Python syntax."""
+    print("\nStep 3: Verifying Python syntax...")
 
-    if not os.path.exists(INIT_FILE):
-        print("  [ERROR] __init__.py not found")
+    try:
+        with open(MODELS_FILE, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        compile(content, MODELS_FILE, "exec")
+        print("  [OK] Syntax is valid")
+        return True
+
+    except SyntaxError as e:
+        print(f"  [ERROR] Syntax error: {e}")
+        print(f"  Line {e.lineno}: {e.text}")
         return False
 
-    with open(INIT_FILE, "r", encoding="utf-8") as f:
+
+def show_file_snippet(filepath, start_pattern, lines=20):
+    """Show a snippet of a file starting from a pattern."""
+    if not os.path.exists(filepath):
+        return
+
+    with open(filepath, "r", encoding="utf-8") as f:
         content = f.read()
 
-    checks = [
-        ("JiraCloudBackend import", "from .jira_cloud import JiraCloudBackend" in content),
-        ("GitHubIssuesBackend import", "from .github_issues import GitHubIssuesBackend" in content),
-        ("jira_cloud in BACKENDS", '"jira_cloud"' in content and "JiraCloudBackend" in content),
-        ("github_issues in BACKENDS", '"github_issues"' in content and "GitHubIssuesBackend" in content),
-    ]
+    match = re.search(start_pattern, content)
+    if match:
+        start = content.rfind('\n', 0, match.start()) + 1
+        end = start
+        for _ in range(lines):
+            next_newline = content.find('\n', end + 1)
+            if next_newline == -1:
+                break
+            end = next_newline
 
-    all_ok = True
-    for name, passed in checks:
-        status = "[OK]" if passed else "[FAIL]"
-        print(f"  {status} {name}")
-        if not passed:
-            all_ok = False
-
-    return all_ok
+        print(f"\n--- Snippet from {filepath} ---")
+        snippet = content[start:end]
+        for i, line in enumerate(snippet.split('\n'), 1):
+            print(f"  {i:3}: {line}")
+        print("--- End snippet ---")
 
 
 def main():
     print("=" * 60)
-    print("Bugsink v2 Custom Backend Registration")
-    print("=" * 60)
-    print()
-
-    if not os.path.exists(ALERTS_DIR):
-        print(f"[ERROR] {ALERTS_DIR} not found")
-        print("This script must be run inside a Bugsink container")
-        sys.exit(1)
-
-    success = True
-
-    # Step 1: Verify backend files were copied
-    if not verify_files():
-        print()
-        print("[ERROR] Backend files not found. Make sure COPY commands ran.")
-        success = False
-
-    print()
-
-    # Step 2: Patch __init__.py to register backends
-    if not patch_init():
-        success = False
-
-    print()
-
-    # Step 3: Verify the patch
-    if not verify_patch():
-        success = False
-
-    print()
+    print("Bugsink Custom Backend Registration")
     print("=" * 60)
 
-    if success:
+    try:
+        # Step 1: Verify backend files
+        if not verify_backend_files():
+            print("\n[ERROR] Backend files not found!")
+            sys.exit(1)
+
+        # Step 2: Patch models.py
+        if not patch_models_file():
+            print("\n[ERROR] Failed to patch models.py")
+            sys.exit(1)
+
+        # Step 3: Verify syntax
+        if not verify_syntax():
+            print("\n[ERROR] Patched file has syntax errors")
+            sys.exit(1)
+
+        # Show relevant snippets for verification
+        show_file_snippet(MODELS_FILE, r"def get_alert_service_kind_choices", 15)
+        show_file_snippet(MODELS_FILE, r"def get_alert_service_backend_class", 20)
+
+        print("\n" + "=" * 60)
         print("[SUCCESS] Backend registration complete!")
         print()
         print("Added backends:")
         print("  - Jira Cloud (jira_cloud)")
         print("  - GitHub Issues (github_issues)")
-        print()
-        print("These backends will appear in the Bugsink UI under")
-        print("Project Settings > Alerts > Add Messaging Service")
-    else:
-        print("[WARNING] Backend registration completed with issues.")
-        print("Check the output above for details.")
+        print("=" * 60)
 
-    print("=" * 60)
-
-    return 0 if success else 1
+    except Exception as e:
+        print(f"\n[FATAL ERROR] {type(e).__name__}: {e}")
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

@@ -47,6 +47,12 @@ LABEL com.bauer-group.features="jira-cloud,github-issues"
 # =============================================================================
 # These backends extend Bugsink's alert system with Jira Cloud and GitHub Issues
 
+# Debug: Show Bugsink structure before patching
+RUN echo "=== Service Backends Directory ===" && \
+    ls -la /app/alerts/service_backends/ && \
+    echo "=== Models.py backend functions ===" && \
+    grep -n "get_alert_service" /app/alerts/models.py | head -20
+
 # Copy backend files to Bugsink's service_backends directory
 COPY backends/jira_cloud.py /app/alerts/service_backends/jira_cloud.py
 COPY backends/github_issues.py /app/alerts/service_backends/github_issues.py
