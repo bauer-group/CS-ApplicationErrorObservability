@@ -1,3 +1,10 @@
+## [0.8.2](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.8.1...v0.8.2) (2026-01-03)
+
+
+### Bug Fixes
+
+* Dynamically set initial kind for MessagingServiceConfigForm in project messaging service ([4130a2a](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/4130a2af1ce9d4bea79b81ad5cffa6d16873a075))
+
 ## [0.8.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.8.0...v0.8.1) (2026-01-03)
 
 
