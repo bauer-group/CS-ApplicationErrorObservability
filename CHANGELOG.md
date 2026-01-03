@@ -1,3 +1,10 @@
+## [0.9.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.9.0...v0.9.1) (2026-01-03)
+
+
+### Bug Fixes
+
+* Prevent changing backend type for existing messaging services ([fccec0b](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/fccec0be1fba1922c3a2f96e8280773e2e1f6fef))
+
 # [0.9.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.8.3...v0.9.0) (2026-01-03)
 
 
