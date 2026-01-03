@@ -1,3 +1,17 @@
+# [0.6.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.5.0...v0.6.0) (2026-01-03)
+
+
+### Bug Fixes
+
+* Add debug output for backend registration process in Dockerfile and register_backends.py ([d776f8a](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/d776f8a92177ced2ac356b1cff28e3f89e4b2dea))
+* Remove debug output from Dockerfile for cleaner build process ([27bc782](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/27bc7828c5c77b176221f1b250fe1a1e65f691b3))
+* Switch to root user for modifying site-packages in Dockerfile ([00d26f2](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/00d26f2ec6d8edd105d2d5e822ed104b54652ecb))
+
+
+### Features
+
+* Update backend registration and configuration for Jira Cloud and GitHub Issues ([e073a55](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/e073a55931ffcac198ed92105aaad5ab599558bf))
+
 # [0.5.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.4.0...v0.5.0) (2026-01-03)
 
 
