@@ -46,6 +46,9 @@ LABEL com.bauer-group.features="jira-cloud,github-issues"
 # Copy Custom Messaging Backends
 # =============================================================================
 # These backends extend Bugsink's alert system with Jira Cloud and GitHub Issues
+# Note: Base image uses USER bugsink, we need root to modify site-packages
+
+USER root
 
 # Bugsink is installed as a Python package in site-packages
 ENV BUGSINK_SITE_PACKAGES=/usr/local/lib/python3.12/site-packages
@@ -61,9 +64,7 @@ COPY patches/register_backends.py /tmp/register_backends.py
 # Apply Backend Registration Patch
 # =============================================================================
 # This modifies the Bugsink backend registry to include our custom backends
-# Note: Base image uses USER bugsink, we need root to modify site-packages
 
-USER root
 RUN python /tmp/register_backends.py && \
     rm -f /tmp/register_backends.py
 
