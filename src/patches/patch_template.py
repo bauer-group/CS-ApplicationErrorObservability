@@ -37,7 +37,7 @@ def patch_template():
 
     original_content = content
 
-    # Find the endblock and add JavaScript before it
+    # Find the LAST endblock (content block) and add JavaScript before it
     js_code = '''
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -54,10 +54,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
 {% endblock %}'''
 
-    if "{% endblock %}" in content:
-        # Replace the last endblock with our JS + endblock
-        content = content.replace("{% endblock %}", js_code, 1)
-        print("  [OK] Added JavaScript for dynamic form switching")
+    # Count endblocks - we want to replace the LAST one (content block, not title block)
+    endblock_count = content.count("{% endblock %}")
+    if endblock_count >= 2:
+        # Replace only the last occurrence
+        # Find the last {% endblock %} and replace it
+        last_idx = content.rfind("{% endblock %}")
+        content = content[:last_idx] + js_code
+        print(f"  [OK] Added JavaScript before last endblock (found {endblock_count} endblocks)")
     else:
         print("  [WARN] Could not find endblock in template")
         return False
