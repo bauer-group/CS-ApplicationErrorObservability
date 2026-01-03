@@ -1,3 +1,10 @@
+# [0.2.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.1.2...v0.2.0) (2026-01-03)
+
+
+### Features
+
+* Add comprehensive Bugsink/Sentry SDK integration examples for Rust and TypeScript ([c1211fa](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/c1211fa3735e01ca2769217e3d7acceb25d17ffb))
+
 ## [0.1.2](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.1.1...v0.1.2) (2026-01-03)
 
 
