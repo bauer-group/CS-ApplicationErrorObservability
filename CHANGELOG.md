@@ -1,3 +1,10 @@
+# [0.8.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.7.1...v0.8.0) (2026-01-03)
+
+
+### Features
+
+* Implement dynamic backend configuration and patching for Bugsink ([9a172c5](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/9a172c5261b159c97f7b57075028ddd64531dfe9))
+
 ## [0.7.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.7.0...v0.7.1) (2026-01-03)
 
 
