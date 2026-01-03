@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.6.0...v0.7.0) (2026-01-03)
+
+
+### Features
+
+* Add support for new messaging backends: Microsoft Teams, PagerDuty, and Generic Webhook ([587db4e](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/587db4ef5708d1fa0b33b3a09d30fb4cc3018572))
+
 # [0.6.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.5.0...v0.6.0) (2026-01-03)
 
 
