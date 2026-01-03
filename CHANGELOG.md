@@ -1,3 +1,10 @@
+# [0.3.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.2.0...v0.3.0) (2026-01-03)
+
+
+### Features
+
+* Add cross-platform installer for Sentry SDK integration ([46d01de](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/46d01dea76689b596f6b57fd293b816d3787946e))
+
 # [0.2.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.1.2...v0.2.0) (2026-01-03)
 
 
