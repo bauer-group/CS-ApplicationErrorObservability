@@ -1,3 +1,10 @@
+## [0.8.3](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.8.2...v0.8.3) (2026-01-03)
+
+
+### Bug Fixes
+
+* Improve JavaScript injection logic to replace only the last endblock in template ([9628b56](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/9628b56c496779d4c2bf31a087f5fea66b9f642b))
+
 ## [0.8.2](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.8.1...v0.8.2) (2026-01-03)
 
 
