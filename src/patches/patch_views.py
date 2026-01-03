@@ -124,8 +124,8 @@ def project_messaging_service_add(request, project_pk):
             return redirect('project_alerts_setup', project_pk=project_pk)
 
     else:
-        form = MessagingServiceConfigForm(project)
         kind = request.GET.get('kind', 'slack')
+        form = MessagingServiceConfigForm(project, initial={'kind': kind})
         ConfigFormClass = get_config_form_for_kind(kind)
         config_form = ConfigFormClass()
 
@@ -133,7 +133,6 @@ def project_messaging_service_add(request, project_pk):
         'project': project,
         'form': form,
         'config_form': config_form,
-        'available_kinds': [('slack', 'Slack (or compatible)'), ('jira_cloud', 'Jira Cloud'), ('github_issues', 'GitHub Issues'), ('microsoft_teams', 'Microsoft Teams'), ('pagerduty', 'PagerDuty'), ('webhook', 'Webhook (Generic)')],
     })'''
 
     if old_add_view in content:
