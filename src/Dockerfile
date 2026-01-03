@@ -56,16 +56,20 @@ ENV BUGSINK_SITE_PACKAGES=/usr/local/lib/python3.12/site-packages
 # Copy all backend files to Bugsink's service_backends directory
 COPY backends/*.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/
 
-# Copy the initialization patch script
-COPY patches/register_backends.py /tmp/register_backends.py
+# Copy patch scripts
+COPY patches/*.py /tmp/patches/
 
 # =============================================================================
-# Apply Backend Registration Patch
+# Apply Patches
 # =============================================================================
-# This modifies the Bugsink backend registry to include our custom backends
+# 1. Register custom backends in alerts/models.py
+# 2. Patch views to use dynamic ConfigForm loading based on backend kind
+# 3. Patch template to reload form when backend type changes
 
-RUN python /tmp/register_backends.py && \
-    rm -f /tmp/register_backends.py
+RUN python /tmp/patches/register_backends.py && \
+    python /tmp/patches/patch_views.py && \
+    python /tmp/patches/patch_template.py && \
+    rm -rf /tmp/patches
 
 # Switch back to bugsink user for runtime security
 USER bugsink

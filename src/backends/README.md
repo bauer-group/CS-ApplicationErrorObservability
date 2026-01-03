@@ -1,6 +1,6 @@
 # Bugsink Custom Messaging Backends
 
-Custom Messaging-Backends für Bugsink v2 zur Integration mit Issue-Tracking-Systemen und Alerting-Plattformen.
+Custom Messaging-Backends für Bugsink zur Integration mit Issue-Tracking-Systemen und Alerting-Plattformen.
 
 **Kompatibilität:** Bugsink v2.x
 
@@ -22,7 +22,7 @@ Diese Backends werden beim Docker-Build automatisch in das Bugsink-Image integri
 2. **PATCH**: `register_backends.py` patcht `alerts/models.py` zur Registrierung
 3. **CLEANUP**: Das Patch-Skript wird nach der Ausführung entfernt
 
-### Bugsink v2 Architektur
+### Bugsink Architektur
 
 - **Model**: `MessagingServiceConfig` mit individuellen Failure-Tracking-Feldern:
   - `last_failure_timestamp`, `last_failure_error_type`, `last_failure_error_message`
