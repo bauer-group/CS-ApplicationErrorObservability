@@ -1,3 +1,10 @@
+## [0.7.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.7.0...v0.7.1) (2026-01-03)
+
+
+### Bug Fixes
+
+* Simplify backend file copying in Dockerfile ([e40b471](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/e40b4715998c099c976dea052463946806e1f28c))
+
 # [0.7.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.6.0...v0.7.0) (2026-01-03)
 
 
