@@ -152,9 +152,14 @@ def _store_success_info(service_config_id):
 
 
 def _format_body(issue_id: str, state_description: str, alert_article: str,
-                 alert_reason: str, **kwargs) -> str:
+                 alert_reason: str, bugsink_base_url: str = None, **kwargs) -> str:
     """Format alert data as GitHub-flavored Markdown."""
     from issues.models import Issue
+
+    # Build issue URL if base URL is available
+    issue_url = None
+    if bugsink_base_url:
+        issue_url = f"{bugsink_base_url.rstrip('/')}/issues/{issue_id}/"
 
     try:
         issue = Issue.objects.select_related("project").get(pk=issue_id)
@@ -165,6 +170,16 @@ def _format_body(issue_id: str, state_description: str, alert_article: str,
             f"**Error Type:** `{issue.calculated_type or 'Unknown'}`",
             f"**Error Message:** {issue.calculated_value or 'No message'}",
             "",
+        ]
+
+        # Add link to Bugsink issue
+        if issue_url:
+            lines.extend([
+                f"**View in Bugsink:** [{issue_url}]({issue_url})",
+                "",
+            ])
+
+        lines.extend([
             "## Timeline",
             "",
             "| First Seen | Last Seen | Event Count |",
@@ -176,7 +191,7 @@ def _format_body(issue_id: str, state_description: str, alert_article: str,
             f"- **Project:** {issue.project.name if issue.project else 'Unknown'}",
             f"- **Alert Type:** {state_description}",
             f"- **Reason:** {alert_reason}",
-        ]
+        ])
 
         # Add unmute reason if present
         if kwargs.get("unmute_reason"):
@@ -187,9 +202,13 @@ def _format_body(issue_id: str, state_description: str, alert_article: str,
             "## Error Details",
             "",
             f"**Issue ID:** {issue_id}",
+        ]
+        if issue_url:
+            lines.append(f"**View in Bugsink:** [{issue_url}]({issue_url})")
+        lines.extend([
             f"**Alert Type:** {state_description}",
             f"**Reason:** {alert_reason}",
-        ]
+        ])
 
     lines.extend([
         "",
@@ -285,7 +304,7 @@ def github_issues_send_test_message(repository, access_token, labels, assignees,
 @shared_task
 def github_issues_send_alert(repository, access_token, labels, assignees,
                               issue_id, state_description, alert_article, alert_reason,
-                              service_config_id, unmute_reason=None):
+                              service_config_id, bugsink_base_url=None, unmute_reason=None):
     """Create a GitHub issue for a Bugsink alert."""
     from issues.models import Issue
 
@@ -302,7 +321,8 @@ def github_issues_send_alert(repository, access_token, labels, assignees,
     except Issue.DoesNotExist:
         title = f"[{state_description}] Issue {issue_id}"
 
-    body = _format_body(issue_id, state_description, alert_article, alert_reason, unmute_reason=unmute_reason)
+    body = _format_body(issue_id, state_description, alert_article, alert_reason,
+                        bugsink_base_url=bugsink_base_url, unmute_reason=unmute_reason)
 
     try:
         result = _create_github_issue(
@@ -364,12 +384,16 @@ class GitHubIssuesBackend:
 
     def send_alert(self, issue_id, state_description, alert_article, alert_reason, **kwargs):
         """Dispatch alert task."""
+        from bugsink.app_settings import get_settings
         config = json.loads(self.service_config.config)
 
         # Check if we should only create issues for NEW errors
         if config.get("only_new_issues", True) and state_description != "NEW":
             logger.debug(f"Skipping GitHub issue for {state_description} issue {issue_id} (only_new_issues=True)")
             return
+
+        # Get base URL from Bugsink settings (same as Slack backend)
+        bugsink_base_url = get_settings().BASE_URL
 
         github_issues_send_alert.delay(
             config["repository"],
@@ -381,5 +405,6 @@ class GitHubIssuesBackend:
             alert_article,
             alert_reason,
             self.service_config.id,
+            bugsink_base_url=bugsink_base_url,
             **kwargs,
         )

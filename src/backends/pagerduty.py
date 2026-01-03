@@ -341,15 +341,11 @@ class PagerDutyBackend:
 
     def send_alert(self, issue_id, state_description, alert_article, alert_reason, **kwargs):
         """Dispatch alert task."""
+        from bugsink.app_settings import get_settings
         config = json.loads(self.service_config.config)
 
-        # Try to get base URL from settings
-        bugsink_base_url = None
-        try:
-            from django.conf import settings
-            bugsink_base_url = getattr(settings, 'BUGSINK_BASE_URL', None)
-        except Exception:
-            pass
+        # Get base URL from Bugsink settings (same as Slack backend)
+        bugsink_base_url = get_settings().BASE_URL
 
         pagerduty_send_alert.delay(
             config["routing_key"],

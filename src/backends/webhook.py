@@ -265,15 +265,21 @@ def webhook_send_test_message(webhook_url, http_method, secret_header, secret_va
 def webhook_send_alert(webhook_url, http_method, secret_header, secret_value,
                         custom_headers, include_full_payload,
                         issue_id, state_description, alert_article, alert_reason,
-                        service_config_id, unmute_reason=None):
+                        service_config_id, bugsink_base_url=None, unmute_reason=None):
     """Send an alert webhook."""
     from issues.models import Issue
 
     try:
         issue = Issue.objects.select_related("project").get(pk=issue_id)
 
+        # Build issue URL if base URL is available
+        issue_url = None
+        if bugsink_base_url:
+            issue_url = f"{bugsink_base_url.rstrip('/')}/issues/{issue_id}/"
+
         data = {
             "issue_id": str(issue_id),
+            "issue_url": issue_url,
             "summary": f"[{state_description}] {issue.calculated_type or 'Error'}: {issue.calculated_value or 'Unknown'}",
             "error_type": issue.calculated_type or "Unknown",
             "error_message": issue.calculated_value or "No message",
@@ -289,8 +295,12 @@ def webhook_send_alert(webhook_url, http_method, secret_header, secret_value,
             data["unmute_reason"] = unmute_reason
 
     except Issue.DoesNotExist:
+        issue_url = None
+        if bugsink_base_url:
+            issue_url = f"{bugsink_base_url.rstrip('/')}/issues/{issue_id}/"
         data = {
             "issue_id": str(issue_id),
+            "issue_url": issue_url,
             "summary": f"[{state_description}] Issue {issue_id}",
             "alert_type": state_description,
             "alert_reason": alert_reason,
@@ -366,7 +376,12 @@ class WebhookBackend:
 
     def send_alert(self, issue_id, state_description, alert_article, alert_reason, **kwargs):
         """Dispatch alert task."""
+        from bugsink.app_settings import get_settings
         config = json.loads(self.service_config.config)
+
+        # Get base URL from Bugsink settings (same as Slack backend)
+        bugsink_base_url = get_settings().BASE_URL
+
         webhook_send_alert.delay(
             config["webhook_url"],
             config.get("http_method", "POST"),
@@ -379,5 +394,6 @@ class WebhookBackend:
             alert_article,
             alert_reason,
             self.service_config.id,
+            bugsink_base_url=bugsink_base_url,
             **kwargs,
         )

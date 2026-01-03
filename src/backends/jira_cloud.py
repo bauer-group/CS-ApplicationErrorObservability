@@ -265,7 +265,7 @@ def jira_cloud_backend_send_test_message(jira_url, user_email, api_token, projec
 def jira_cloud_backend_send_alert(jira_url, user_email, api_token, project_key,
                                    issue_type, labels, issue_id, state_description,
                                    alert_article, alert_reason, service_config_id,
-                                   unmute_reason=None):
+                                   bugsink_base_url=None, unmute_reason=None):
     """Create a Jira issue for a Bugsink alert."""
     from issues.models import Issue
 
@@ -278,6 +278,11 @@ def jira_cloud_backend_send_alert(jira_url, user_email, api_token, project_key,
         "labels": labels,
     }
 
+    # Build issue URL if base URL is available
+    issue_url = None
+    if bugsink_base_url:
+        issue_url = f"{bugsink_base_url.rstrip('/')}/issues/{issue_id}/"
+
     try:
         issue = Issue.objects.select_related("project").get(pk=issue_id)
 
@@ -287,6 +292,14 @@ def jira_cloud_backend_send_alert(jira_url, user_email, api_token, project_key,
             f"Error Type: {issue.calculated_type or 'Unknown'}",
             f"Error Message: {issue.calculated_value or 'No message'}",
             "",
+        ]
+
+        # Add link to Bugsink issue
+        if issue_url:
+            description_lines.append(f"View in Bugsink: {issue_url}")
+            description_lines.append("")
+
+        description_lines.extend([
             f"First Seen: {issue.first_seen.isoformat() if issue.first_seen else 'Unknown'}",
             f"Last Seen: {issue.last_seen.isoformat() if issue.last_seen else 'Unknown'}",
             f"Event Count: {issue.digested_event_count}",
@@ -294,7 +307,7 @@ def jira_cloud_backend_send_alert(jira_url, user_email, api_token, project_key,
             f"Project: {issue.project.name if issue.project else 'Unknown'}",
             f"Alert Type: {state_description}",
             f"Reason: {alert_reason}",
-        ]
+        ])
 
         if unmute_reason:
             description_lines.append(f"Unmute Reason: {unmute_reason}")
@@ -303,7 +316,11 @@ def jira_cloud_backend_send_alert(jira_url, user_email, api_token, project_key,
 
     except Issue.DoesNotExist:
         summary = f"[{state_description}] Issue {issue_id}"
-        description = f"Issue ID: {issue_id}\nAlert Type: {state_description}\nReason: {alert_reason}"
+        desc_lines = [f"Issue ID: {issue_id}"]
+        if issue_url:
+            desc_lines.append(f"View in Bugsink: {issue_url}")
+        desc_lines.extend([f"Alert Type: {state_description}", f"Reason: {alert_reason}"])
+        description = "\n".join(desc_lines)
 
     try:
         result = _create_jira_issue(config, summary=summary, description=description)
@@ -362,12 +379,16 @@ class JiraCloudBackend:
 
     def send_alert(self, issue_id, state_description, alert_article, alert_reason, **kwargs):
         """Dispatch alert task."""
+        from bugsink.app_settings import get_settings
         config = json.loads(self.service_config.config)
 
         # Check if we should only create tickets for NEW issues
         if config.get("only_new_issues", True) and state_description != "NEW":
             logger.debug(f"Skipping Jira ticket for {state_description} issue {issue_id} (only_new_issues=True)")
             return
+
+        # Get base URL from Bugsink settings (same as Slack backend)
+        bugsink_base_url = get_settings().BASE_URL
 
         jira_cloud_backend_send_alert.delay(
             config["jira_url"],
@@ -381,5 +402,6 @@ class JiraCloudBackend:
             alert_article,
             alert_reason,
             self.service_config.id,
+            bugsink_base_url=bugsink_base_url,
             **kwargs,
         )
