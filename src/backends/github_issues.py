@@ -8,17 +8,12 @@ Compatible with Bugsink v2.
 
 Installation:
     Copy to: /app/alerts/service_backends/github_issues.py
-    The backend is automatically registered via the patch script.
+    Register in: /app/alerts/models.py
 
 Requirements:
     - GitHub repository with Issues enabled
     - Personal Access Token (classic) or Fine-grained token with 'issues:write' permission
     - Create token at: https://github.com/settings/tokens
-
-Configuration in Bugsink UI:
-    - Repository: owner/repo format, e.g., "myorg/myproject"
-    - Access Token: GitHub Personal Access Token
-    - Labels: Optional comma-separated labels
 """
 
 import json
@@ -26,9 +21,11 @@ import logging
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
-from snappea import shared_task
 from django import forms
 from django.utils import timezone
+
+from snappea.decorators import shared_task
+from bugsink.transaction import immediate_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +60,9 @@ class GitHubIssuesConfigForm(forms.Form):
         required=False,
     )
 
-    def __init__(self, *args, config=None, **kwargs):
+    def __init__(self, *args, **kwargs):
         """Initialize form with existing config if provided."""
+        config = kwargs.pop("config", None)
         super().__init__(*args, **kwargs)
         if config:
             self.fields["repository"].initial = config.get("repository", "")
@@ -92,23 +90,57 @@ class GitHubIssuesConfigForm(forms.Form):
         }
 
 
-def _store_failure_info(service_config, error_type: str, error_message: str, response_body: str = None):
-    """Store failure information for debugging."""
-    service_config.last_failure_at = timezone.now()
-    service_config.last_failure_info = json.dumps({
-        "error_type": error_type,
-        "error_message": error_message,
-        "response_body": response_body[:1000] if response_body else None,
-    })
-    service_config.save(update_fields=["last_failure_at", "last_failure_info"])
+def _store_failure_info(service_config_id, exception, response=None):
+    """Store failure info in MessagingServiceConfig using individual fields."""
+    from alerts.models import MessagingServiceConfig
+
+    with immediate_atomic(only_if_needed=True):
+        try:
+            config = MessagingServiceConfig.objects.get(id=service_config_id)
+            config.last_failure_timestamp = timezone.now()
+            config.last_failure_error_type = type(exception).__name__
+            config.last_failure_error_message = str(exception)[:2000]
+
+            if response is not None:
+                if hasattr(response, 'status'):
+                    config.last_failure_status_code = response.status
+                elif hasattr(response, 'code'):
+                    config.last_failure_status_code = response.code
+                else:
+                    config.last_failure_status_code = None
+
+                response_text = getattr(response, 'text', None)
+                if response_text:
+                    config.last_failure_response_text = response_text[:2000]
+                    try:
+                        json.loads(response_text)
+                        config.last_failure_is_json = True
+                    except (json.JSONDecodeError, ValueError):
+                        config.last_failure_is_json = False
+                else:
+                    config.last_failure_response_text = None
+                    config.last_failure_is_json = None
+            else:
+                config.last_failure_status_code = None
+                config.last_failure_response_text = None
+                config.last_failure_is_json = None
+
+            config.save()
+        except MessagingServiceConfig.DoesNotExist:
+            logger.warning(f"MessagingServiceConfig {service_config_id} not found for failure tracking")
 
 
-def _store_success_info(service_config):
-    """Clear failure info on success."""
-    if service_config.last_failure_at is not None:
-        service_config.last_failure_at = None
-        service_config.last_failure_info = None
-        service_config.save(update_fields=["last_failure_at", "last_failure_info"])
+def _store_success_info(service_config_id):
+    """Clear failure info on successful operation."""
+    from alerts.models import MessagingServiceConfig
+
+    with immediate_atomic(only_if_needed=True):
+        try:
+            config = MessagingServiceConfig.objects.get(id=service_config_id)
+            config.clear_failure_status()
+            config.save()
+        except MessagingServiceConfig.DoesNotExist:
+            pass
 
 
 def _format_body(issue_id: str, state_description: str, alert_article: str,
@@ -192,12 +224,15 @@ def _create_github_issue(config: dict, title: str, body: str) -> dict:
 
 
 @shared_task
-def github_issues_send_test_message(config: dict, project_name: str, display_name: str,
-                                     service_config_id: int):
+def github_issues_send_test_message(repository, access_token, labels, assignees,
+                                     project_name, display_name, service_config_id):
     """Send a test issue to verify GitHub configuration."""
-    from alerts.models import MessagingServiceConfig
-
-    service_config = MessagingServiceConfig.objects.get(pk=service_config_id)
+    config = {
+        "repository": repository,
+        "access_token": access_token,
+        "labels": labels,
+        "assignees": assignees,
+    }
 
     try:
         result = _create_github_issue(
@@ -215,40 +250,51 @@ def github_issues_send_test_message(config: dict, project_name: str, display_nam
             ),
         )
 
-        _store_success_info(service_config)
+        _store_success_info(service_config_id)
         logger.info(f"GitHub test issue created: #{result.get('number')} - {result.get('html_url')}")
 
     except HTTPError as e:
         response_body = e.read().decode("utf-8") if e.fp else ""
-        _store_failure_info(service_config, "HTTPError", f"Status {e.code}: {e.reason}", response_body)
         logger.error(f"GitHub API error: {e.code} - {response_body}")
 
+        class ResponseWrapper:
+            def __init__(self, code, text):
+                self.code = code
+                self.status = code
+                self.text = text
+
+        _store_failure_info(service_config_id, e, ResponseWrapper(e.code, response_body))
+
     except URLError as e:
-        _store_failure_info(service_config, "URLError", str(e.reason))
         logger.error(f"GitHub connection error: {e.reason}")
+        _store_failure_info(service_config_id, e)
 
     except Exception as e:
-        _store_failure_info(service_config, type(e).__name__, str(e))
         logger.exception(f"Unexpected error sending to GitHub: {e}")
+        _store_failure_info(service_config_id, e)
 
 
 @shared_task
-def github_issues_send_alert(config: dict, issue_id: str, state_description: str,
-                              alert_article: str, alert_reason: str,
-                              service_config_id: int, **kwargs):
+def github_issues_send_alert(repository, access_token, labels, assignees,
+                              issue_id, state_description, alert_article, alert_reason,
+                              service_config_id, unmute_reason=None):
     """Create a GitHub issue for a Bugsink alert."""
-    from alerts.models import MessagingServiceConfig
     from issues.models import Issue
 
-    service_config = MessagingServiceConfig.objects.get(pk=service_config_id)
+    config = {
+        "repository": repository,
+        "access_token": access_token,
+        "labels": labels,
+        "assignees": assignees,
+    }
 
     try:
         issue = Issue.objects.select_related("project").get(pk=issue_id)
-        title = f"[{state_description}] {issue.calculated_type}: {issue.calculated_value}"
+        title = f"[{state_description}] {issue.calculated_type or 'Error'}: {issue.calculated_value or 'Unknown'}"
     except Issue.DoesNotExist:
         title = f"[{state_description}] Issue {issue_id}"
 
-    body = _format_body(issue_id, state_description, alert_article, alert_reason, **kwargs)
+    body = _format_body(issue_id, state_description, alert_article, alert_reason, unmute_reason=unmute_reason)
 
     try:
         result = _create_github_issue(
@@ -257,21 +303,28 @@ def github_issues_send_alert(config: dict, issue_id: str, state_description: str
             body=body,
         )
 
-        _store_success_info(service_config)
+        _store_success_info(service_config_id)
         logger.info(f"GitHub issue created for Bugsink issue {issue_id}: #{result.get('number')}")
 
     except HTTPError as e:
         response_body = e.read().decode("utf-8") if e.fp else ""
-        _store_failure_info(service_config, "HTTPError", f"Status {e.code}: {e.reason}", response_body)
         logger.error(f"GitHub API error: {e.code} - {response_body}")
 
+        class ResponseWrapper:
+            def __init__(self, code, text):
+                self.code = code
+                self.status = code
+                self.text = text
+
+        _store_failure_info(service_config_id, e, ResponseWrapper(e.code, response_body))
+
     except URLError as e:
-        _store_failure_info(service_config, "URLError", str(e.reason))
         logger.error(f"GitHub connection error: {e.reason}")
+        _store_failure_info(service_config_id, e)
 
     except Exception as e:
-        _store_failure_info(service_config, type(e).__name__, str(e))
         logger.exception(f"Unexpected error sending to GitHub: {e}")
+        _store_failure_info(service_config_id, e)
 
 
 class GitHubIssuesBackend:
@@ -280,12 +333,8 @@ class GitHubIssuesBackend:
     Compatible with Bugsink v2 backend interface.
     """
 
-    kind = "github_issues"
-    display_name = "GitHub Issues"
-
     def __init__(self, service_config):
         self.service_config = service_config
-        self.config = json.loads(service_config.config) if service_config.config else {}
 
     @classmethod
     def get_form_class(cls):
@@ -293,30 +342,30 @@ class GitHubIssuesBackend:
         return GitHubIssuesConfigForm
 
     def send_test_message(self):
-        """Queue a test message task."""
+        """Dispatch test message task."""
+        config = json.loads(self.service_config.config)
         github_issues_send_test_message.delay(
-            config=self.config,
-            project_name=self.service_config.project.name,
-            display_name=self.service_config.display_name,
-            service_config_id=self.service_config.pk,
+            config["repository"],
+            config["access_token"],
+            config.get("labels", []),
+            config.get("assignees", []),
+            self.service_config.project.name,
+            self.service_config.display_name,
+            self.service_config.id,
         )
 
     def send_alert(self, issue_id, state_description, alert_article, alert_reason, **kwargs):
-        """Queue an alert task.
-
-        Args:
-            issue_id: The Bugsink issue ID
-            state_description: Description of the issue state (e.g., "New Issue", "Regression")
-            alert_article: Article for the alert (e.g., "a", "an")
-            alert_reason: Reason for the alert
-            **kwargs: Additional arguments (e.g., unmute_reason)
-        """
+        """Dispatch alert task."""
+        config = json.loads(self.service_config.config)
         github_issues_send_alert.delay(
-            config=self.config,
-            issue_id=str(issue_id),
-            state_description=state_description,
-            alert_article=alert_article,
-            alert_reason=alert_reason,
-            service_config_id=self.service_config.pk,
+            config["repository"],
+            config["access_token"],
+            config.get("labels", []),
+            config.get("assignees", []),
+            issue_id,
+            state_description,
+            alert_article,
+            alert_reason,
+            self.service_config.id,
             **kwargs,
         )

@@ -47,19 +47,27 @@ LABEL com.bauer-group.features="jira-cloud,github-issues"
 # =============================================================================
 # These backends extend Bugsink's alert system with Jira Cloud and GitHub Issues
 
+# Bugsink is installed as a Python package in site-packages
+ENV BUGSINK_SITE_PACKAGES=/usr/local/lib/python3.12/site-packages
+
 # Copy backend files to Bugsink's service_backends directory
-COPY backends/jira_cloud.py /app/alerts/service_backends/jira_cloud.py
-COPY backends/github_issues.py /app/alerts/service_backends/github_issues.py
+COPY backends/jira_cloud.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/jira_cloud.py
+COPY backends/github_issues.py ${BUGSINK_SITE_PACKAGES}/alerts/service_backends/github_issues.py
 
 # Copy the initialization patch script
-COPY patches/register_backends.py /app/patches/register_backends.py
+COPY patches/register_backends.py /tmp/register_backends.py
 
 # =============================================================================
 # Apply Backend Registration Patch
 # =============================================================================
 # This modifies the Bugsink backend registry to include our custom backends
+# Note: Base image uses USER bugsink, we need root to modify site-packages
 
-RUN python /app/patches/register_backends.py && \
-    rm -rf /app/patches
+USER root
+RUN python /tmp/register_backends.py && \
+    rm -f /tmp/register_backends.py
+
+# Switch back to bugsink user for runtime security
+USER bugsink
 
 # Note: PORT, healthcheck and other defaults are inherited from base image.

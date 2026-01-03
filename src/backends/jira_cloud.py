@@ -8,19 +8,12 @@ Compatible with Bugsink v2.
 
 Installation:
     Copy to: /app/alerts/service_backends/jira_cloud.py
-    The backend is automatically registered via the patch script.
+    Register in: /app/alerts/models.py
 
 Requirements:
     - Jira Cloud instance with API access
     - API Token (create at: https://id.atlassian.com/manage-profile/security/api-tokens)
     - User email associated with the API token
-
-Configuration in Bugsink UI:
-    - Jira URL: https://your-domain.atlassian.net
-    - User Email: your-email@example.com
-    - API Token: your-api-token
-    - Project Key: e.g., "BUG" or "PROJ"
-    - Issue Type: e.g., "Bug", "Task"
 """
 
 import json
@@ -29,9 +22,11 @@ from base64 import b64encode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
-from snappea import shared_task
 from django import forms
 from django.utils import timezone
+
+from snappea.decorators import shared_task
+from bugsink.transaction import immediate_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -84,26 +79,27 @@ class JiraCloudConfigForm(forms.Form):
         required=False,
     )
 
-    def __init__(self, *args, config=None, **kwargs):
+    def __init__(self, *args, **kwargs):
         """Initialize form with existing config if provided."""
+        config = kwargs.pop("config", None)
         super().__init__(*args, **kwargs)
         if config:
             self.fields["jira_url"].initial = config.get("jira_url", "")
             self.fields["user_email"].initial = config.get("user_email", "")
             self.fields["api_token"].initial = config.get("api_token", "")
-            self.fields["project_key"].initial = config.get("project_key", "")
+            self.fields["project_key"].initial = config.get("project_key", "PROJ")
             self.fields["issue_type"].initial = config.get("issue_type", "Bug")
             self.fields["labels"].initial = ",".join(config.get("labels", []))
 
     def get_config(self):
-        """Return configuration as dictionary for storage."""
+        """Return configuration dict to be JSON serialized and stored."""
         return {
             "jira_url": self.cleaned_data["jira_url"].rstrip("/"),
             "user_email": self.cleaned_data["user_email"],
             "api_token": self.cleaned_data["api_token"],
             "project_key": self.cleaned_data["project_key"],
             "issue_type": self.cleaned_data["issue_type"],
-            "labels": [l.strip() for l in self.cleaned_data.get("labels", "").split(",") if l.strip()],
+            "labels": [label.strip() for label in self.cleaned_data.get("labels", "").split(",") if label.strip()],
         }
 
 
@@ -114,69 +110,69 @@ def _get_auth_header(email: str, api_token: str) -> str:
     return f"Basic {encoded}"
 
 
-def _store_failure_info(service_config, error_type: str, error_message: str, response_body: str = None):
-    """Store failure information for debugging."""
-    service_config.last_failure_at = timezone.now()
-    service_config.last_failure_info = json.dumps({
-        "error_type": error_type,
-        "error_message": error_message,
-        "response_body": response_body[:1000] if response_body else None,
-    })
-    service_config.save(update_fields=["last_failure_at", "last_failure_info"])
+def _store_failure_info(service_config_id, exception, response=None):
+    """Store failure info in MessagingServiceConfig using individual fields."""
+    from alerts.models import MessagingServiceConfig
+
+    with immediate_atomic(only_if_needed=True):
+        try:
+            config = MessagingServiceConfig.objects.get(id=service_config_id)
+            config.last_failure_timestamp = timezone.now()
+            config.last_failure_error_type = type(exception).__name__
+            config.last_failure_error_message = str(exception)[:2000]
+
+            if response is not None:
+                # For urllib, we need to handle differently than requests
+                if hasattr(response, 'status'):
+                    config.last_failure_status_code = response.status
+                elif hasattr(response, 'code'):
+                    config.last_failure_status_code = response.code
+                else:
+                    config.last_failure_status_code = None
+
+                response_text = getattr(response, 'text', None)
+                if response_text:
+                    config.last_failure_response_text = response_text[:2000]
+                    try:
+                        json.loads(response_text)
+                        config.last_failure_is_json = True
+                    except (json.JSONDecodeError, ValueError):
+                        config.last_failure_is_json = False
+                else:
+                    config.last_failure_response_text = None
+                    config.last_failure_is_json = None
+            else:
+                config.last_failure_status_code = None
+                config.last_failure_response_text = None
+                config.last_failure_is_json = None
+
+            config.save()
+        except MessagingServiceConfig.DoesNotExist:
+            logger.warning(f"MessagingServiceConfig {service_config_id} not found for failure tracking")
 
 
-def _store_success_info(service_config):
-    """Clear failure info on success."""
-    if service_config.last_failure_at is not None:
-        service_config.last_failure_at = None
-        service_config.last_failure_info = None
-        service_config.save(update_fields=["last_failure_at", "last_failure_info"])
+def _store_success_info(service_config_id):
+    """Clear failure info on successful operation."""
+    from alerts.models import MessagingServiceConfig
 
-
-def _format_description(issue_id: str, state_description: str, alert_article: str,
-                        alert_reason: str, **kwargs) -> str:
-    """Format alert data as Jira description."""
-    from issues.models import Issue
-
-    try:
-        issue = Issue.objects.select_related("project").get(pk=issue_id)
-
-        lines = [
-            f"*Error Type:* {issue.calculated_type or 'Unknown'}",
-            f"*Error Message:* {issue.calculated_value or 'No message'}",
-            "",
-            f"*First Seen:* {issue.first_seen.isoformat() if issue.first_seen else 'Unknown'}",
-            f"*Last Seen:* {issue.last_seen.isoformat() if issue.last_seen else 'Unknown'}",
-            f"*Event Count:* {issue.digested_event_count}",
-            "",
-            f"*Project:* {issue.project.name if issue.project else 'Unknown'}",
-            "",
-            f"*Alert Type:* {state_description}",
-            f"*Reason:* {alert_reason}",
-        ]
-
-        # Add unmute reason if present
-        if kwargs.get("unmute_reason"):
-            lines.append(f"*Unmute Reason:* {kwargs['unmute_reason']}")
-
-    except Issue.DoesNotExist:
-        lines = [
-            f"*Issue ID:* {issue_id}",
-            f"*Alert Type:* {state_description}",
-            f"*Reason:* {alert_reason}",
-        ]
-
-    return "\n".join(lines)
+    with immediate_atomic(only_if_needed=True):
+        try:
+            config = MessagingServiceConfig.objects.get(id=service_config_id)
+            config.clear_failure_status()
+            config.save()
+        except MessagingServiceConfig.DoesNotExist:
+            pass
 
 
 def _create_jira_issue(config: dict, summary: str, description: str) -> dict:
     """Create a Jira issue via REST API."""
     url = f"{config['jira_url']}/rest/api/3/issue"
 
+    # Build Atlassian Document Format description
     payload = {
         "fields": {
             "project": {"key": config["project_key"]},
-            "summary": summary[:255],  # Jira summary limit
+            "summary": summary[:255],
             "description": {
                 "type": "doc",
                 "version": 1,
@@ -191,7 +187,6 @@ def _create_jira_issue(config: dict, summary: str, description: str) -> dict:
         }
     }
 
-    # Add labels if configured
     if config.get("labels"):
         payload["fields"]["labels"] = config["labels"]
 
@@ -208,84 +203,124 @@ def _create_jira_issue(config: dict, summary: str, description: str) -> dict:
 
 
 @shared_task
-def jira_cloud_send_test_message(config: dict, project_name: str, display_name: str,
-                                  service_config_id: int):
+def jira_cloud_backend_send_test_message(jira_url, user_email, api_token, project_key,
+                                          issue_type, labels, project_name,
+                                          display_name, service_config_id):
     """Send a test message to verify Jira configuration."""
-    from alerts.models import MessagingServiceConfig
-
-    service_config = MessagingServiceConfig.objects.get(pk=service_config_id)
+    config = {
+        "jira_url": jira_url,
+        "user_email": user_email,
+        "api_token": api_token,
+        "project_key": project_key,
+        "issue_type": issue_type,
+        "labels": labels,
+    }
 
     try:
         result = _create_jira_issue(
             config,
-            summary=f"[Bugsink] Test Issue - {project_name}",
+            summary=f"[Bugsink Test] {project_name} - Configuration Verified",
             description=(
                 f"This is a test issue created by Bugsink to verify the Jira integration.\n\n"
                 f"Project: {project_name}\n"
                 f"Service: {display_name}\n\n"
-                "If you see this issue, your configuration is working correctly.\n\n"
+                "If you see this issue, your configuration is working correctly.\n"
                 "You can safely delete this issue."
             ),
         )
 
-        _store_success_info(service_config)
+        _store_success_info(service_config_id)
         logger.info(f"Jira test issue created: {result.get('key')}")
 
     except HTTPError as e:
         response_body = e.read().decode("utf-8") if e.fp else ""
-        _store_failure_info(service_config, "HTTPError", f"Status {e.code}: {e.reason}", response_body)
         logger.error(f"Jira API error: {e.code} - {response_body}")
 
+        class ResponseWrapper:
+            def __init__(self, code, text):
+                self.code = code
+                self.status = code
+                self.text = text
+
+        _store_failure_info(service_config_id, e, ResponseWrapper(e.code, response_body))
+
     except URLError as e:
-        _store_failure_info(service_config, "URLError", str(e.reason))
         logger.error(f"Jira connection error: {e.reason}")
+        _store_failure_info(service_config_id, e)
 
     except Exception as e:
-        _store_failure_info(service_config, type(e).__name__, str(e))
         logger.exception(f"Unexpected error sending to Jira: {e}")
+        _store_failure_info(service_config_id, e)
 
 
 @shared_task
-def jira_cloud_send_alert(config: dict, issue_id: str, state_description: str,
-                          alert_article: str, alert_reason: str,
-                          service_config_id: int, **kwargs):
+def jira_cloud_backend_send_alert(jira_url, user_email, api_token, project_key,
+                                   issue_type, labels, issue_id, state_description,
+                                   alert_article, alert_reason, service_config_id,
+                                   unmute_reason=None):
     """Create a Jira issue for a Bugsink alert."""
-    from alerts.models import MessagingServiceConfig
     from issues.models import Issue
 
-    service_config = MessagingServiceConfig.objects.get(pk=service_config_id)
+    config = {
+        "jira_url": jira_url,
+        "user_email": user_email,
+        "api_token": api_token,
+        "project_key": project_key,
+        "issue_type": issue_type,
+        "labels": labels,
+    }
 
     try:
         issue = Issue.objects.select_related("project").get(pk=issue_id)
-        summary = f"[{state_description}] {issue.calculated_type}: {issue.calculated_value}"
+
+        summary = f"[{state_description}] {issue.calculated_type or 'Error'}: {issue.calculated_value or 'Unknown'}"
+
+        description_lines = [
+            f"Error Type: {issue.calculated_type or 'Unknown'}",
+            f"Error Message: {issue.calculated_value or 'No message'}",
+            "",
+            f"First Seen: {issue.first_seen.isoformat() if issue.first_seen else 'Unknown'}",
+            f"Last Seen: {issue.last_seen.isoformat() if issue.last_seen else 'Unknown'}",
+            f"Event Count: {issue.digested_event_count}",
+            "",
+            f"Project: {issue.project.name if issue.project else 'Unknown'}",
+            f"Alert Type: {state_description}",
+            f"Reason: {alert_reason}",
+        ]
+
+        if unmute_reason:
+            description_lines.append(f"Unmute Reason: {unmute_reason}")
+
+        description = "\n".join(description_lines)
+
     except Issue.DoesNotExist:
         summary = f"[{state_description}] Issue {issue_id}"
-
-    description = _format_description(issue_id, state_description, alert_article,
-                                       alert_reason, **kwargs)
+        description = f"Issue ID: {issue_id}\nAlert Type: {state_description}\nReason: {alert_reason}"
 
     try:
-        result = _create_jira_issue(
-            config,
-            summary=summary,
-            description=description,
-        )
-
-        _store_success_info(service_config)
+        result = _create_jira_issue(config, summary=summary, description=description)
+        _store_success_info(service_config_id)
         logger.info(f"Jira issue created for Bugsink issue {issue_id}: {result.get('key')}")
 
     except HTTPError as e:
         response_body = e.read().decode("utf-8") if e.fp else ""
-        _store_failure_info(service_config, "HTTPError", f"Status {e.code}: {e.reason}", response_body)
         logger.error(f"Jira API error: {e.code} - {response_body}")
 
+        class ResponseWrapper:
+            def __init__(self, code, text):
+                self.code = code
+                self.status = code
+                self.text = text
+
+        _store_failure_info(service_config_id, e, ResponseWrapper(e.code, response_body))
+
     except URLError as e:
-        _store_failure_info(service_config, "URLError", str(e.reason))
         logger.error(f"Jira connection error: {e.reason}")
+        _store_failure_info(service_config_id, e)
 
     except Exception as e:
-        _store_failure_info(service_config, type(e).__name__, str(e))
         logger.exception(f"Unexpected error sending to Jira: {e}")
+        _store_failure_info(service_config_id, e)
 
 
 class JiraCloudBackend:
@@ -294,12 +329,8 @@ class JiraCloudBackend:
     Compatible with Bugsink v2 backend interface.
     """
 
-    kind = "jira_cloud"
-    display_name = "Jira Cloud"
-
     def __init__(self, service_config):
         self.service_config = service_config
-        self.config = json.loads(service_config.config) if service_config.config else {}
 
     @classmethod
     def get_form_class(cls):
@@ -307,30 +338,34 @@ class JiraCloudBackend:
         return JiraCloudConfigForm
 
     def send_test_message(self):
-        """Queue a test message task."""
-        jira_cloud_send_test_message.delay(
-            config=self.config,
-            project_name=self.service_config.project.name,
-            display_name=self.service_config.display_name,
-            service_config_id=self.service_config.pk,
+        """Dispatch test message task."""
+        config = json.loads(self.service_config.config)
+        jira_cloud_backend_send_test_message.delay(
+            config["jira_url"],
+            config["user_email"],
+            config["api_token"],
+            config["project_key"],
+            config["issue_type"],
+            config.get("labels", []),
+            self.service_config.project.name,
+            self.service_config.display_name,
+            self.service_config.id,
         )
 
     def send_alert(self, issue_id, state_description, alert_article, alert_reason, **kwargs):
-        """Queue an alert task.
-
-        Args:
-            issue_id: The Bugsink issue ID
-            state_description: Description of the issue state (e.g., "New Issue", "Regression")
-            alert_article: Article for the alert (e.g., "a", "an")
-            alert_reason: Reason for the alert
-            **kwargs: Additional arguments (e.g., unmute_reason)
-        """
-        jira_cloud_send_alert.delay(
-            config=self.config,
-            issue_id=str(issue_id),
-            state_description=state_description,
-            alert_article=alert_article,
-            alert_reason=alert_reason,
-            service_config_id=self.service_config.pk,
+        """Dispatch alert task."""
+        config = json.loads(self.service_config.config)
+        jira_cloud_backend_send_alert.delay(
+            config["jira_url"],
+            config["user_email"],
+            config["api_token"],
+            config["project_key"],
+            config["issue_type"],
+            config.get("labels", []),
+            issue_id,
+            state_description,
+            alert_article,
+            alert_reason,
+            self.service_config.id,
             **kwargs,
         )

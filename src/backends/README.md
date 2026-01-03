@@ -16,14 +16,29 @@ Custom Messaging-Backends für Bugsink v2 zur Integration mit Issue-Tracking-Sys
 Diese Backends werden beim Docker-Build automatisch in das Bugsink-Image integriert:
 
 1. **COPY**: Backend-Dateien werden nach `/app/alerts/service_backends/` kopiert
-2. **PATCH**: `register_backends.py` registriert die Backends im `BACKENDS` Dict und `get_alert_service_kind_choices()`
+2. **PATCH**: `register_backends.py` patcht `alerts/models.py` zur Registrierung
 3. **CLEANUP**: Das Patch-Skript wird nach der Ausführung entfernt
 
 ### Bugsink v2 Architektur
 
-- Model: `MessagingServiceConfig` (nicht `MessagingService`)
-- Task-System: `snappea` (nicht `celery`)
-- Backend-Registrierung: Dynamisch via `get_alert_service_kind_choices()`
+- **Model**: `MessagingServiceConfig` mit individuellen Failure-Tracking-Feldern:
+  - `last_failure_timestamp`, `last_failure_error_type`, `last_failure_error_message`
+  - `last_failure_status_code`, `last_failure_response_text`, `last_failure_is_json`
+  - Methode `clear_failure_status()` zum Zurücksetzen
+- **Task-System**: `snappea` (nicht Celery) - Import: `from snappea.decorators import shared_task`
+- **Transaktionen**: `from bugsink.transaction import immediate_atomic` für DB-Writes in Tasks
+- **Backend-Registrierung**: Via `get_alert_service_kind_choices()` und `get_alert_service_backend_class()` in `alerts/models.py`
+- **ConfigForm**: Verwendet `config = kwargs.pop("config", None)` Pattern
+
+## PR-Kompatibilität
+
+Diese Backend-Dateien sind so strukturiert, dass sie für einen PR ins Bugsink-Repo verwendet werden können:
+
+1. **Speicherort**: `alerts/service_backends/jira_cloud.py` bzw. `github_issues.py`
+2. **Registrierung**: Ergänzungen in `alerts/models.py`:
+   - Import der Backend-Klassen
+   - Tuple in `get_alert_service_kind_choices()`: `("jira_cloud", "Jira Cloud")`
+   - If-Block in `get_alert_service_backend_class()`: `if kind == "jira_cloud": return JiraCloudBackend`
 
 ## Konfiguration
 
