@@ -7,7 +7,10 @@
 # Usage:
 #   ./install.sh                     # Interactive mode
 #   ./install.sh --dsn "https://..." # With DSN
-#   curl -sSL <url>/install.sh | bash -s -- --dsn "..."
+#
+# API Mode (automatic project creation):
+#   ./install.sh --api-key "..." --api-url "https://errors.example.com"
+#   ./install.sh --api-key "..." --api-url "..." --team "MyTeam" --project "MyApp"
 #
 
 set -e

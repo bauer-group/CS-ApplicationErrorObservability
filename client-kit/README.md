@@ -5,6 +5,7 @@ Automatisiertes Tool zur Integration des Sentry SDK in deine Anwendungen.
 ## Features
 
 - **Remote Installation** - Direkt aus dem Git-Repo ausführbar, kein Klonen nötig
+- **API-Modus** - Automatisches Erstellen von Teams und Projekten via Bugsink API
 - **Automatische Sprach-Erkennung** - Erkennt Python, Node.js, TypeScript, Java, .NET, Go, PHP, Ruby
 - **Minimale, nicht-destruktive Änderungen** - Fügt nur Konfigurations-Dateien hinzu
 - **Framework-Erkennung** - Erkennt Django, Flask, Express, NestJS, etc.
@@ -19,32 +20,32 @@ Führe das Client-Kit direkt aus dem Repository aus - ohne es vorher zu klonen:
 
 ```bash
 # Im Projekt-Ordner ausführen
-curl -sSL https://raw.githubusercontent.com/YOUR_ORG/ApplicationErrorObservability/main/client-kit/remote-install.sh | bash
+curl -sSL https://raw.githubusercontent.com/bauer-group/CS-ApplicationErrorObservability/main/client-kit/remote-install.sh | bash
 
 # Mit DSN
-curl -sSL <URL>/remote-install.sh | bash -s -- --dsn "https://key@errors.observability.app.bauer-group.com/1"
+curl -sSL https://raw.githubusercontent.com/bauer-group/CS-ApplicationErrorObservability/main/client-kit/remote-install.sh | bash -s -- --dsn "https://key@errors.example.com/1"
+
+# Mit API-Modus (automatisches Projekt-Setup)
+curl -sSL https://raw.githubusercontent.com/bauer-group/CS-ApplicationErrorObservability/main/client-kit/remote-install.sh | bash -s -- \
+  --api-key "your-api-key" \
+  --api-url "https://errors.example.com"
 
 # Mit wget
-wget -qO- <URL>/remote-install.sh | bash -s -- --dsn "https://..."
+wget -qO- https://raw.githubusercontent.com/bauer-group/CS-ApplicationErrorObservability/main/client-kit/remote-install.sh | bash
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
 # Im Projekt-Ordner ausführen
-irm https://raw.githubusercontent.com/YOUR_ORG/ApplicationErrorObservability/main/client-kit/remote-install.ps1 | iex
+irm https://raw.githubusercontent.com/bauer-group/CS-ApplicationErrorObservability/main/client-kit/remote-install.ps1 | iex
 
 # Mit DSN (erst herunterladen, dann ausführen)
-Invoke-WebRequest -Uri "<URL>/remote-install.ps1" -OutFile install.ps1
-.\install.ps1 -Dsn "https://key@errors.observability.app.bauer-group.com/1"
-```
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/bauer-group/CS-ApplicationErrorObservability/main/client-kit/remote-install.ps1" -OutFile install.ps1
+.\install.ps1 -Dsn "https://key@errors.example.com/1"
 
-### Mit Umgebungsvariable für eigenes Repo
-
-```bash
-# Eigene Repo-URL setzen
-export CLIENT_KIT_REPO_URL="https://raw.githubusercontent.com/DEIN_ORG/DEIN_REPO/main/client-kit"
-curl -sSL $CLIENT_KIT_REPO_URL/remote-install.sh | bash
+# Mit API-Modus
+.\install.ps1 -ApiKey "your-api-key" -ApiUrl "https://errors.example.com"
 ```
 
 ## Lokale Installation
@@ -85,24 +86,54 @@ python install.py --dsn "https://key@host/1" --environment production
 
 ## Workflow
 
-### 1. Projekt erstellen (manuell in Bugsink UI)
+### Option A: API-Modus (Empfohlen)
+
+Mit API-Key wird das Team und Projekt automatisch erstellt:
+
+```bash
+# Im Projekt-Root ausführen
+cd /path/to/your/project
+
+# Interaktiv - wählt Team/Projekt aus oder erstellt neue
+./install.sh --api-key "your-key" --api-url "https://errors.example.com"
+
+# Vollautomatisch - erstellt Team und Projekt falls nicht vorhanden
+./install.sh --api-key "your-key" --api-url "https://errors.example.com" \
+  --team "MyTeam" --project "MyApp"
+```
+
+Der Installer im API-Modus:
+
+1. Verbindet sich mit der Bugsink API
+2. Zeigt verfügbare Teams an oder erstellt ein neues
+3. Zeigt verfügbare Projekte an oder erstellt ein neues
+4. Holt den DSN automatisch
+5. Erkennt die Projekt-Sprache
+6. Installiert die SDK-Abhängigkeiten
+7. Erstellt eine Konfigurations-Datei
+8. Fügt den DSN zur `.env` hinzu
+
+### Option B: Manueller Modus
+
+#### 1. Projekt erstellen (manuell in Bugsink UI)
 
 1. Öffne dein Bugsink Dashboard
 2. Gehe zu **Teams** → wähle oder erstelle ein Team
 3. Gehe zu **Projects** → **New Project**
 4. Kopiere den **DSN** aus den Project Settings
 
-### 2. SDK integrieren (automatisiert)
+#### 2. SDK integrieren
 
 ```bash
 # Im Projekt-Root ausführen
 cd /path/to/your/project
 
 # Installer ausführen
-/path/to/client-kit/install.sh --dsn "https://..."
+./install.sh --dsn "https://key@errors.example.com/1"
 ```
 
 Der Installer:
+
 1. Erkennt die Projekt-Sprache automatisch
 2. Installiert die SDK-Abhängigkeiten
 3. Erstellt eine Konfigurations-Datei
@@ -134,6 +165,8 @@ import './sentry.config';
 |--------|--------------|
 | `./install.sh` | Interaktiver Modus |
 | `./install.sh --dsn <DSN>` | Installation mit DSN |
+| `./install.sh --api-key <KEY> --api-url <URL>` | API-Modus (interaktiv) |
+| `./install.sh --api-key <KEY> --api-url <URL> --team <TEAM> --project <PROJECT>` | API-Modus (vollautomatisch) |
 | `./install.sh --update-dsn --dsn <DSN>` | Nur DSN aktualisieren |
 | `./install.sh --update-client` | Client-Code aus Templates aktualisieren |
 | `./install.sh --environment staging` | Environment setzen |
@@ -176,6 +209,10 @@ your-project/
 | `SENTRY_ENVIRONMENT` | Environment-Name | `production` |
 | `SENTRY_TRACES_SAMPLE_RATE` | Performance Sample-Rate | `0.1` |
 | `APP_VERSION` | Release-Version | - |
+| `BUGSINK_API_KEY` | API-Key für automatisches Setup | - |
+| `BUGSINK_API_URL` | Bugsink Server URL | - |
+| `BUGSINK_TEAM` | Standard Team-Name für API-Modus | - |
+| `BUGSINK_PROJECT` | Standard Projekt-Name für API-Modus | - |
 
 ## Templates anpassen
 

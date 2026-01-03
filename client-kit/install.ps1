@@ -11,6 +11,18 @@
 .PARAMETER Environment
     Environment name (default: production)
 
+.PARAMETER ApiKey
+    Bugsink API key for automatic project setup
+
+.PARAMETER ApiUrl
+    Bugsink server URL
+
+.PARAMETER Team
+    Team name for API mode
+
+.PARAMETER Project
+    Project name for API mode
+
 .PARAMETER UpdateDsn
     Only update the DSN in existing configuration
 
@@ -24,6 +36,10 @@
 .EXAMPLE
     .\install.ps1 -Dsn "https://key@host/1"
     # Install with DSN
+
+.EXAMPLE
+    .\install.ps1 -ApiKey "..." -ApiUrl "https://errors.example.com"
+    # API mode with automatic project setup
 
 .EXAMPLE
     .\install.ps1 -UpdateDsn -Dsn "https://key@host/1"
@@ -40,6 +56,18 @@ param(
 
     [Parameter()]
     [string]$Release,
+
+    [Parameter()]
+    [string]$ApiKey,
+
+    [Parameter()]
+    [string]$ApiUrl,
+
+    [Parameter()]
+    [string]$Team,
+
+    [Parameter()]
+    [string]$Project,
 
     [Parameter()]
     [switch]$UpdateDsn,
@@ -101,39 +129,59 @@ function Main {
     $pythonCmd = Test-PythonInstalled
 
     # Build arguments
-    $args = @()
+    $installerArgs = @()
 
     if ($Dsn) {
-        $args += "--dsn"
-        $args += $Dsn
+        $installerArgs += "--dsn"
+        $installerArgs += $Dsn
     }
 
     if ($Environment -and $Environment -ne "production") {
-        $args += "--environment"
-        $args += $Environment
+        $installerArgs += "--environment"
+        $installerArgs += $Environment
     }
 
     if ($Release) {
-        $args += "--release"
-        $args += $Release
+        $installerArgs += "--release"
+        $installerArgs += $Release
+    }
+
+    if ($ApiKey) {
+        $installerArgs += "--api-key"
+        $installerArgs += $ApiKey
+    }
+
+    if ($ApiUrl) {
+        $installerArgs += "--api-url"
+        $installerArgs += $ApiUrl
+    }
+
+    if ($Team) {
+        $installerArgs += "--team"
+        $installerArgs += $Team
+    }
+
+    if ($Project) {
+        $installerArgs += "--project"
+        $installerArgs += $Project
     }
 
     if ($UpdateDsn) {
-        $args += "--update-dsn"
+        $installerArgs += "--update-dsn"
     }
 
     if ($UpdateClient) {
-        $args += "--update-client"
+        $installerArgs += "--update-client"
     }
 
     if ($ProjectRoot) {
-        $args += "--project-root"
-        $args += $ProjectRoot
+        $installerArgs += "--project-root"
+        $installerArgs += $ProjectRoot
     }
 
     # Run installer
-    if ($args.Count -gt 0) {
-        & $pythonCmd $Installer @args
+    if ($installerArgs.Count -gt 0) {
+        & $pythonCmd $Installer @installerArgs
     }
     else {
         & $pythonCmd $Installer

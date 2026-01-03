@@ -12,6 +12,9 @@ Usage:
     python install.py --update-dsn       # Update DSN only
     python install.py --update-client    # Update client code from templates
 
+API Mode (automatic project/team creation):
+    python install.py --api-key <KEY> --api-url <URL> --team <TEAM> --project <PROJECT>
+
 Requirements:
     Python 3.7+
 """
@@ -23,8 +26,10 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.request
+import urllib.error
 from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
 
@@ -60,6 +65,142 @@ class SentryConfig:
     dsn: str
     environment: str = "production"
     release: Optional[str] = None
+
+
+# =============================================================================
+# BUGSINK API CLIENT
+# =============================================================================
+
+class BugsinkAPI:
+    """Client for Bugsink API v0 to manage teams and projects."""
+
+    def __init__(self, api_url: str, api_key: str):
+        self.api_url = api_url.rstrip("/")
+        self.api_key = api_key
+        self.base_path = "/api/canonical/0"
+
+    def _request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Tuple[int, Any]:
+        """Make an API request."""
+        url = f"{self.api_url}{self.base_path}{endpoint}"
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+        body = json.dumps(data).encode("utf-8") if data else None
+
+        try:
+            request = urllib.request.Request(url, data=body, headers=headers, method=method)
+            with urllib.request.urlopen(request, timeout=30) as response:
+                response_body = response.read().decode("utf-8")
+                return response.status, json.loads(response_body) if response_body else {}
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8") if e.fp else ""
+            try:
+                error_data = json.loads(error_body) if error_body else {}
+            except json.JSONDecodeError:
+                error_data = {"detail": error_body}
+            return e.code, error_data
+        except urllib.error.URLError as e:
+            return 0, {"detail": str(e.reason)}
+        except Exception as e:
+            return 0, {"detail": str(e)}
+
+    def test_connection(self) -> bool:
+        """Test if the API connection works."""
+        status, _ = self._request("GET", "/teams/")
+        return status == 200
+
+    def list_teams(self) -> List[Dict]:
+        """List all teams."""
+        status, data = self._request("GET", "/teams/")
+        if status == 200:
+            return data.get("results", [])
+        return []
+
+    def get_team_by_name(self, name: str) -> Optional[Dict]:
+        """Find a team by name."""
+        teams = self.list_teams()
+        for team in teams:
+            if team.get("name", "").lower() == name.lower():
+                return team
+        return None
+
+    def create_team(self, name: str, visibility: str = "joinable") -> Optional[Dict]:
+        """Create a new team."""
+        status, data = self._request("POST", "/teams/", {
+            "name": name,
+            "visibility": visibility
+        })
+        if status == 201:
+            return data
+        print(f"  Error creating team: {data}")
+        return None
+
+    def get_or_create_team(self, name: str) -> Optional[Dict]:
+        """Get existing team or create a new one."""
+        team = self.get_team_by_name(name)
+        if team:
+            print(f"  Found existing team: {name}")
+            return team
+
+        print(f"  Creating team: {name}")
+        return self.create_team(name)
+
+    def list_projects(self, team_id: Optional[str] = None) -> List[Dict]:
+        """List all projects, optionally filtered by team."""
+        endpoint = "/projects/"
+        if team_id:
+            endpoint += f"?team={team_id}"
+
+        status, data = self._request("GET", endpoint)
+        if status == 200:
+            return data.get("results", [])
+        return []
+
+    def get_project_by_name(self, name: str, team_id: Optional[str] = None) -> Optional[Dict]:
+        """Find a project by name."""
+        projects = self.list_projects(team_id)
+        for project in projects:
+            if project.get("name", "").lower() == name.lower():
+                return project
+        return None
+
+    def get_project_details(self, project_id: int) -> Optional[Dict]:
+        """Get project details including DSN."""
+        status, data = self._request("GET", f"/projects/{project_id}/")
+        if status == 200:
+            return data
+        return None
+
+    def create_project(self, team_id: str, name: str, visibility: str = "team_members") -> Optional[Dict]:
+        """Create a new project."""
+        status, data = self._request("POST", "/projects/", {
+            "team": team_id,
+            "name": name,
+            "visibility": visibility
+        })
+        if status == 201:
+            # Need to get project details to get the DSN
+            project_id = data.get("id")
+            if project_id:
+                return self.get_project_details(project_id)
+            return data
+        print(f"  Error creating project: {data}")
+        return None
+
+    def get_or_create_project(self, team_id: str, name: str) -> Optional[Dict]:
+        """Get existing project or create a new one, returns project with DSN."""
+        project = self.get_project_by_name(name, team_id)
+        if project:
+            print(f"  Found existing project: {name}")
+            # Get full details including DSN
+            return self.get_project_details(project.get("id"))
+
+        print(f"  Creating project: {name}")
+        return self.create_project(team_id, name)
 
 
 # =============================================================================
@@ -692,6 +833,7 @@ class ClientKitInstaller:
         self.templates = TemplateManager(self.templates_dir)
         self.project: Optional[ProjectInfo] = None
         self.config: Optional[SentryConfig] = None
+        self.api: Optional[BugsinkAPI] = None
 
     def run(self, args: argparse.Namespace):
         """Run the installer based on arguments."""
@@ -714,9 +856,27 @@ class ClientKitInstaller:
             print("  Supported: Python, Node.js, TypeScript, Java, .NET, Go, PHP, Ruby")
             return 1
 
-        # Get or prompt for DSN
+        # Initialize API client if credentials provided
+        api_key = args.api_key or os.getenv("BUGSINK_API_KEY")
+        api_url = args.api_url or os.getenv("BUGSINK_API_URL")
+
+        if api_key and api_url:
+            self.api = BugsinkAPI(api_url, api_key)
+            if not self.api.test_connection():
+                print("\n  Warning: Could not connect to Bugsink API.")
+                print("  Falling back to manual DSN mode.")
+                self.api = None
+            else:
+                print(f"\n  Connected to Bugsink API: {api_url}")
+
+        # Get DSN - either via API or manually
         dsn = args.dsn or os.getenv("SENTRY_DSN")
 
+        # If API is available and no DSN provided, use API mode
+        if self.api and not dsn and not args.update_client:
+            dsn = self._get_dsn_via_api(args)
+
+        # Fallback to manual DSN prompt if needed
         if not dsn and not args.update_client:
             dsn = self._prompt_dsn()
 
@@ -734,6 +894,94 @@ class ClientKitInstaller:
             return self._update_client()
         else:
             return self._interactive_menu()
+
+    def _get_dsn_via_api(self, args: argparse.Namespace) -> Optional[str]:
+        """Get DSN via Bugsink API by creating/finding team and project."""
+        print("\n  API Mode: Automatic project setup")
+        print("  ─────────────────────────────────────────")
+
+        # Get team name - from args, env, or prompt
+        team_name = args.team or os.getenv("BUGSINK_TEAM")
+        if not team_name:
+            # Show available teams
+            teams = self.api.list_teams()
+            if teams:
+                print("\n  Available teams:")
+                for i, team in enumerate(teams, 1):
+                    print(f"    {i}. {team.get('name')}")
+                print(f"    {len(teams) + 1}. Create new team")
+                print("")
+
+                choice = input("  Select team number or enter new team name: ").strip()
+
+                if choice.isdigit():
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(teams):
+                        team_name = teams[idx].get("name")
+                    elif idx == len(teams):
+                        team_name = input("  Enter new team name: ").strip()
+                else:
+                    team_name = choice
+            else:
+                team_name = input("  Enter team name: ").strip()
+
+        if not team_name:
+            print("  Error: Team name is required.")
+            return None
+
+        # Get or create team
+        team = self.api.get_or_create_team(team_name)
+        if not team:
+            print("  Error: Could not get or create team.")
+            return None
+
+        team_id = team.get("id")
+
+        # Get project name - from args, env, or use detected project name
+        project_name = args.project or os.getenv("BUGSINK_PROJECT") or self.project.project_name
+
+        # Show available projects in team
+        projects = self.api.list_projects(team_id)
+        if projects and not args.project:
+            print(f"\n  Existing projects in team '{team_name}':")
+            for i, proj in enumerate(projects, 1):
+                print(f"    {i}. {proj.get('name')}")
+            print(f"    {len(projects) + 1}. Create new project")
+            print("")
+
+            default_msg = f" (default: {project_name})" if project_name else ""
+            choice = input(f"  Select project number or enter new name{default_msg}: ").strip()
+
+            if choice.isdigit():
+                idx = int(choice) - 1
+                if 0 <= idx < len(projects):
+                    project_name = projects[idx].get("name")
+                elif idx == len(projects):
+                    new_name = input(f"  Enter new project name [{project_name}]: ").strip()
+                    if new_name:
+                        project_name = new_name
+            elif choice:
+                project_name = choice
+
+        if not project_name:
+            print("  Error: Project name is required.")
+            return None
+
+        # Get or create project
+        project = self.api.get_or_create_project(team_id, project_name)
+        if not project:
+            print("  Error: Could not get or create project.")
+            return None
+
+        dsn = project.get("dsn")
+        if dsn:
+            print("\n  DSN retrieved successfully!")
+            print(f"  Team: {team_name}")
+            print(f"  Project: {project_name}")
+            return dsn
+
+        print("  Error: Could not retrieve DSN from project.")
+        return None
 
     def _prompt_dsn(self) -> str:
         """Prompt user for DSN."""
@@ -848,15 +1096,23 @@ Examples:
   python install.py --update-dsn --dsn "..." # Update DSN only
   python install.py --update-client          # Update client code
 
+API Mode (automatic project creation):
+  python install.py --api-key <KEY> --api-url <URL>
+  python install.py --api-key <KEY> --api-url <URL> --team "MyTeam" --project "MyApp"
+
 Environment Variables:
-  SENTRY_DSN        - Sentry/Bugsink DSN
+  SENTRY_DSN         - Sentry/Bugsink DSN
   SENTRY_ENVIRONMENT - Environment name (default: production)
+  BUGSINK_API_KEY    - API key for Bugsink
+  BUGSINK_API_URL    - Bugsink server URL (e.g., https://errors.example.com)
+  BUGSINK_TEAM       - Default team name
+  BUGSINK_PROJECT    - Default project name
         """
     )
 
     parser.add_argument(
         "--dsn",
-        help="Sentry/Bugsink DSN"
+        help="Sentry/Bugsink DSN (skip API mode if provided)"
     )
     parser.add_argument(
         "--environment", "-e",
@@ -881,6 +1137,24 @@ Environment Variables:
         "--project-root",
         type=Path,
         help="Project root directory (default: current directory)"
+    )
+
+    # API Mode arguments
+    parser.add_argument(
+        "--api-key",
+        help="Bugsink API key for automatic project setup"
+    )
+    parser.add_argument(
+        "--api-url",
+        help="Bugsink server URL (e.g., https://errors.example.com)"
+    )
+    parser.add_argument(
+        "--team",
+        help="Team name for API mode (creates if not exists)"
+    )
+    parser.add_argument(
+        "--project",
+        help="Project name for API mode (creates if not exists)"
     )
 
     args = parser.parse_args()

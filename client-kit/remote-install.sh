@@ -5,15 +5,19 @@
 # Execute directly from GitHub without cloning the repo.
 #
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/YOUR_ORG/ApplicationErrorObservability/main/client-kit/remote-install.sh | bash
+#   curl -sSL https://raw.githubusercontent.com/bauer-group/CS-ApplicationErrorObservability/main/client-kit/remote-install.sh | bash
 #   curl -sSL <URL> | bash -s -- --dsn "https://..."
 #   wget -qO- <URL> | bash -s -- --dsn "https://..."
+#
+# API Mode (automatic project creation):
+#   curl -sSL <URL> | bash -s -- --api-key "..." --api-url "https://errors.example.com"
+#   curl -sSL <URL> | bash -s -- --api-key "..." --api-url "..." --team "MyTeam" --project "MyApp"
 #
 
 set -e
 
-# Configuration - UPDATE THIS URL TO YOUR REPO
-REPO_RAW_URL="${CLIENT_KIT_REPO_URL:-https://raw.githubusercontent.com/YOUR_ORG/ApplicationErrorObservability/main/client-kit}"
+# Configuration
+REPO_RAW_URL="${CLIENT_KIT_REPO_URL:-https://raw.githubusercontent.com/bauer-group/CS-ApplicationErrorObservability/main/client-kit}"
 
 # Colors
 RED='\033[0;31m'

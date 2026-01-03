@@ -7,16 +7,32 @@
 
 .EXAMPLE
     # Run directly from URL:
-    irm https://raw.githubusercontent.com/YOUR_ORG/ApplicationErrorObservability/main/client-kit/remote-install.ps1 | iex
+    irm https://raw.githubusercontent.com/bauer-group/CS-ApplicationErrorObservability/main/client-kit/remote-install.ps1 | iex
 
     # Or with parameters (save first, then run):
     Invoke-WebRequest -Uri "<URL>" -OutFile install.ps1; .\install.ps1 -Dsn "https://..."
+
+    # API Mode (automatic project creation):
+    .\install.ps1 -ApiKey "..." -ApiUrl "https://errors.example.com"
+    .\install.ps1 -ApiKey "..." -ApiUrl "..." -Team "MyTeam" -Project "MyApp"
 
 .PARAMETER Dsn
     Sentry/Bugsink DSN
 
 .PARAMETER Environment
     Environment name (default: production)
+
+.PARAMETER ApiKey
+    Bugsink API key for automatic project setup
+
+.PARAMETER ApiUrl
+    Bugsink server URL
+
+.PARAMETER Team
+    Team name for API mode
+
+.PARAMETER Project
+    Project name for API mode
 
 .PARAMETER UpdateDsn
     Only update the DSN
@@ -30,14 +46,18 @@ param(
     [string]$Dsn,
     [string]$Environment = "production",
     [string]$Release,
+    [string]$ApiKey,
+    [string]$ApiUrl,
+    [string]$Team,
+    [string]$Project,
     [switch]$UpdateDsn,
     [switch]$UpdateClient
 )
 
 $ErrorActionPreference = "Stop"
 
-# Configuration - UPDATE THIS URL TO YOUR REPO
-$RepoRawUrl = if ($env:CLIENT_KIT_REPO_URL) { $env:CLIENT_KIT_REPO_URL } else { "https://raw.githubusercontent.com/YOUR_ORG/ApplicationErrorObservability/main/client-kit" }
+# Configuration
+$RepoRawUrl = if ($env:CLIENT_KIT_REPO_URL) { $env:CLIENT_KIT_REPO_URL } else { "https://raw.githubusercontent.com/bauer-group/CS-ApplicationErrorObservability/main/client-kit" }
 
 function Write-ColorOutput {
     param([string]$Message, [string]$Color = "White")
@@ -70,7 +90,7 @@ function Test-PythonInstalled {
     exit 1
 }
 
-function Download-File {
+function Get-RemoteFile {
     param([string]$Url, [string]$Destination)
 
     try {
@@ -100,7 +120,7 @@ function Main {
         Write-ColorOutput "Downloading client-kit..." -Color Cyan
 
         # Download main installer
-        Download-File -Url "$RepoRawUrl/install.py" -Destination "$tempDir\install.py"
+        Get-RemoteFile -Url "$RepoRawUrl/install.py" -Destination "$tempDir\install.py"
 
         # Create templates directory
         $templatesDir = Join-Path $tempDir "templates"
@@ -123,43 +143,63 @@ function Main {
             New-Item -ItemType Directory -Path $langDir -Force | Out-Null
 
             $file = $languages[$lang]
-            Download-File -Url "$RepoRawUrl/templates/$lang/$file" -Destination "$langDir\$file" | Out-Null
+            Get-RemoteFile -Url "$RepoRawUrl/templates/$lang/$file" -Destination "$langDir\$file" | Out-Null
         }
 
         Write-ColorOutput "Downloaded successfully" -Color Green
         Write-Host ""
 
         # Build arguments
-        $args = @()
+        $installerArgs = @()
 
         if ($Dsn) {
-            $args += "--dsn"
-            $args += $Dsn
+            $installerArgs += "--dsn"
+            $installerArgs += $Dsn
         }
 
         if ($Environment -and $Environment -ne "production") {
-            $args += "--environment"
-            $args += $Environment
+            $installerArgs += "--environment"
+            $installerArgs += $Environment
         }
 
         if ($Release) {
-            $args += "--release"
-            $args += $Release
+            $installerArgs += "--release"
+            $installerArgs += $Release
+        }
+
+        if ($ApiKey) {
+            $installerArgs += "--api-key"
+            $installerArgs += $ApiKey
+        }
+
+        if ($ApiUrl) {
+            $installerArgs += "--api-url"
+            $installerArgs += $ApiUrl
+        }
+
+        if ($Team) {
+            $installerArgs += "--team"
+            $installerArgs += $Team
+        }
+
+        if ($Project) {
+            $installerArgs += "--project"
+            $installerArgs += $Project
         }
 
         if ($UpdateDsn) {
-            $args += "--update-dsn"
+            $installerArgs += "--update-dsn"
         }
 
         if ($UpdateClient) {
-            $args += "--update-client"
+            $installerArgs += "--update-client"
         }
 
         # Run installer
         $installerPath = Join-Path $tempDir "install.py"
 
-        if ($args.Count -gt 0) {
-            & $pythonCmd $installerPath @args
+        if ($installerArgs.Count -gt 0) {
+            & $pythonCmd $installerPath @installerArgs
         }
         else {
             & $pythonCmd $installerPath
