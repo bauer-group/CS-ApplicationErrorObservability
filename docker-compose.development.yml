@@ -4,7 +4,6 @@
 # This configuration exposes services directly via ports (no Traefik required)
 # Access:
 #   - Bugsink:     http://localhost:8080
-
 services:
 
 ### Application Services ###
