@@ -1,3 +1,10 @@
+# [0.11.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.10.1...v0.11.0) (2026-01-07)
+
+
+### Features
+
+* Add Dependabot configuration for Docker and GitHub Actions updates ([60b2910](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/60b2910bee15ba845e8570997acd9d26130ab77b))
+
 ## [0.10.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.10.0...v0.10.1) (2026-01-03)
 
 
