@@ -20,10 +20,14 @@ Diese Backends werden beim Docker-Build automatisch in das Bugsink-Image integri
 
 1. **COPY**: Backend-Dateien werden nach `/usr/local/lib/python3.12/site-packages/alerts/service_backends/` kopiert
 2. **PATCH**: `register_backends.py` patcht `alerts/models.py` zur Registrierung
-3. **CLEANUP**: Das Patch-Skript wird nach der Ausführung entfernt
+3. **VERIFY**: `patch_views.py` und `patch_template.py` verifizieren die moderne Bugsink-Architektur (kein Patching nötig für Bugsink 2.0.x+)
+4. **CLEANUP**: Die Patch-Skripte werden nach der Ausführung entfernt
+
+**Hinweis:** Bugsink 2.0.x+ hat bereits dynamisches Form-Loading via `get_alert_service_backend_class(kind).get_form_class()`. Die Views und Templates müssen nicht mehr gepatcht werden.
 
 ### Bugsink Architektur
 
+- **HTTP Client**: `requests` Library (konsistent mit den bestehenden Bugsink-Backends)
 - **Model**: `MessagingServiceConfig` mit individuellen Failure-Tracking-Feldern:
   - `last_failure_timestamp`, `last_failure_error_type`, `last_failure_error_message`
   - `last_failure_status_code`, `last_failure_response_text`, `last_failure_is_json`

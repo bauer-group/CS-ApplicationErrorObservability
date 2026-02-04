@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
 """
-Template Patch for Bugsink v2
-=============================
+Template Patch for Bugsink v2.x
+===============================
 
-This script patches the messaging service edit template to add JavaScript
-that reloads the page with the correct backend kind when the dropdown changes.
+This script was originally needed to patch the messaging service template
+to add JavaScript that reloads the page when the backend dropdown changes.
+
+IMPORTANT: Bugsink v2.x uses a new template architecture with:
+- project_messaging_service_new.html for adding new services
+- config_forms dictionary containing all backend forms
+- JavaScript already handles backend switching
+
+This patch is NO LONGER NEEDED for Bugsink 2.0.12 and later.
+It now only verifies that the modern templates are in place.
+
+Compatible with: Bugsink 2.0.12+
+Last updated: 2026
 """
 
 import os
@@ -12,82 +23,56 @@ import sys
 
 # Paths
 SITE_PACKAGES = "/usr/local/lib/python3.12/site-packages"
-TEMPLATE_FILE = os.path.join(
-    SITE_PACKAGES, "projects", "templates", "projects", "project_messaging_service_edit.html"
-)
+TEMPLATES_DIR = os.path.join(SITE_PACKAGES, "projects", "templates", "projects")
+NEW_TEMPLATE = os.path.join(TEMPLATES_DIR, "project_messaging_service_new.html")
+EDIT_TEMPLATE = os.path.join(TEMPLATES_DIR, "project_messaging_service_edit.html")
 
 
-def patch_template():
-    """Add JavaScript to reload form when backend kind changes."""
-    print("Patching messaging service template...")
+def verify_modern_templates():
+    """Verify that Bugsink has the modern template architecture."""
+    print("Verifying Bugsink template architecture...")
 
-    if not os.path.exists(TEMPLATE_FILE):
-        print(f"  [ERROR] {TEMPLATE_FILE} does not exist!")
-        return False
+    # Check for new template (modern architecture)
+    new_exists = os.path.exists(NEW_TEMPLATE)
+    print(f"  project_messaging_service_new.html: {'OK' if new_exists else 'MISSING'}")
 
-    with open(TEMPLATE_FILE, "r", encoding="utf-8") as f:
-        content = f.read()
+    # Check for edit template
+    edit_exists = os.path.exists(EDIT_TEMPLATE)
+    print(f"  project_messaging_service_edit.html: {'OK' if edit_exists else 'MISSING'}")
 
-    print(f"  Original file size: {len(content)} bytes")
+    if new_exists:
+        with open(NEW_TEMPLATE, "r", encoding="utf-8") as f:
+            content = f.read()
 
-    # Check if already patched
-    if "id_kind" in content and "addEventListener" in content:
-        print("  [OK] Already patched")
-        return True
+        # Check for modern architecture indicators
+        has_config_forms = "config_forms" in content
+        print(f"  config_forms dictionary support: {'OK' if has_config_forms else 'MISSING'}")
 
-    original_content = content
+        if has_config_forms:
+            print("\n  [OK] Modern template architecture detected - no patching needed!")
+            return True
 
-    # Find the LAST endblock (content block) and add JavaScript before it
-    js_code = '''
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    var kindSelect = document.getElementById('id_kind');
-    if (kindSelect) {
-        kindSelect.addEventListener('change', function() {
-            var currentUrl = window.location.pathname;
-            var newUrl = currentUrl + '?kind=' + encodeURIComponent(this.value);
-            window.location.href = newUrl;
-        });
-    }
-});
-</script>
-
-{% endblock %}'''
-
-    # Count endblocks - we want to replace the LAST one (content block, not title block)
-    endblock_count = content.count("{% endblock %}")
-    if endblock_count >= 2:
-        # Replace only the last occurrence
-        # Find the last {% endblock %} and replace it
-        last_idx = content.rfind("{% endblock %}")
-        content = content[:last_idx] + js_code
-        print(f"  [OK] Added JavaScript before last endblock (found {endblock_count} endblocks)")
-    else:
-        print("  [WARN] Could not find endblock in template")
-        return False
-
-    if content != original_content:
-        with open(TEMPLATE_FILE, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"  Patched file size: {len(content)} bytes")
-        print("  [OK] Template patched successfully")
-        return True
-    else:
-        print("  [WARN] No changes made to template")
-        return False
+    print("\n  [WARN] Older template architecture may be in use")
+    return False
 
 
 def main():
     print("=" * 60)
-    print("Bugsink Template Patch - Dynamic Backend Switching")
+    print("Bugsink Template Patch - Architecture Verification")
     print("=" * 60)
+    print()
+    print("NOTE: Bugsink 2.0.12+ uses a new template system with")
+    print("      multiple backend forms loaded at once.")
+    print()
 
-    if not patch_template():
-        print("\n[ERROR] Failed to patch template")
+    if not verify_modern_templates():
+        print("\n[WARNING] Templates may need manual patching for older Bugsink versions")
+        print("See the original patch_template.py for the legacy patching logic")
         sys.exit(1)
 
     print("\n" + "=" * 60)
-    print("[SUCCESS] Template patch complete!")
+    print("[SUCCESS] Template architecture verification complete!")
+    print("No patching required for Bugsink 2.0.12+")
     print("=" * 60)
 
 

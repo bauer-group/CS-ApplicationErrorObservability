@@ -1,27 +1,32 @@
 #!/usr/bin/env python3
 """
-Views Patch for Bugsink v2
-==========================
+Views Patch for Bugsink v2.x
+============================
 
-This script patches projects/views.py to dynamically load the correct
-ConfigForm based on the selected backend kind.
+This script was originally needed to patch projects/views.py to dynamically
+load the correct ConfigForm based on the selected backend kind.
 
-The original code hardcodes SlackConfigForm, which prevents other backends
-from showing their specific configuration fields.
+IMPORTANT: Bugsink v2.x already includes dynamic form loading via:
+- get_alert_service_backend_class(kind).get_form_class()
+
+This patch is NO LONGER NEEDED for Bugsink 2.0.12 and later.
+It now only verifies that the modern architecture is in place.
+
+Compatible with: Bugsink 2.0.12+
+Last updated: 2026
 """
 
 import os
 import sys
-import re
 
 # Paths
 SITE_PACKAGES = "/usr/local/lib/python3.12/site-packages"
 VIEWS_FILE = os.path.join(SITE_PACKAGES, "projects", "views.py")
 
 
-def patch_views_file():
-    """Patch projects/views.py to use dynamic ConfigForm loading."""
-    print("Patching projects/views.py for dynamic backend forms...")
+def verify_modern_architecture():
+    """Verify that Bugsink has the modern dynamic form loading architecture."""
+    print("Verifying Bugsink views architecture...")
 
     if not os.path.exists(VIEWS_FILE):
         print(f"  [ERROR] {VIEWS_FILE} does not exist!")
@@ -30,240 +35,49 @@ def patch_views_file():
     with open(VIEWS_FILE, "r", encoding="utf-8") as f:
         content = f.read()
 
-    print(f"  Original file size: {len(content)} bytes")
+    print(f"  File size: {len(content)} bytes")
 
-    # Check if already patched
-    if "get_config_form_for_kind" in content:
-        print("  [OK] Already patched")
-        return True
+    # Check for modern architecture indicators
+    checks = [
+        ("get_alert_service_backend_class", "Dynamic backend class loading"),
+        ("get_form_class()", "Dynamic form class loading"),
+        ("get_alert_service_kind_choices", "Dynamic kind choices"),
+    ]
 
-    original_content = content
+    all_ok = True
+    for pattern, description in checks:
+        found = pattern in content
+        status = "OK" if found else "MISSING"
+        print(f"  {description}: [{status}]")
+        if not found:
+            all_ok = False
 
-    # === STEP 1: Update imports ===
-    # Find the SlackConfigForm import and replace it with our helper function
-    old_import = "from alerts.service_backends.slack import SlackConfigForm"
-    new_import = """from alerts.service_backends.slack import SlackConfigForm
-
-# Dynamic ConfigForm loader for multiple backends
-def get_config_form_for_kind(kind):
-    \"\"\"Return the appropriate ConfigForm class for the given backend kind.\"\"\"
-    if kind == "slack":
-        return SlackConfigForm
-    elif kind == "jira_cloud":
-        from alerts.service_backends.jira_cloud import JiraCloudConfigForm
-        return JiraCloudConfigForm
-    elif kind == "github_issues":
-        from alerts.service_backends.github_issues import GitHubIssuesConfigForm
-        return GitHubIssuesConfigForm
-    elif kind == "microsoft_teams":
-        from alerts.service_backends.microsoft_teams import MicrosoftTeamsConfigForm
-        return MicrosoftTeamsConfigForm
-    elif kind == "pagerduty":
-        from alerts.service_backends.pagerduty import PagerDutyConfigForm
-        return PagerDutyConfigForm
-    elif kind == "webhook":
-        from alerts.service_backends.webhook import WebhookConfigForm
-        return WebhookConfigForm
-    else:
-        # Default to Slack for unknown kinds
-        return SlackConfigForm"""
-
-    if old_import in content:
-        content = content.replace(old_import, new_import)
-        print("  [OK] Added get_config_form_for_kind helper function")
-    else:
-        print("  [WARN] Could not find SlackConfigForm import")
-        return False
-
-    # === STEP 2: Patch project_messaging_service_add ===
-    # Replace the hardcoded SlackConfigForm with dynamic form loading
-    old_add_view = '''@atomic_for_request_method
-def project_messaging_service_add(request, project_pk):
-    project = Project.objects.get(id=project_pk, is_deleted=False)
-    _check_project_admin(project, request.user)
-
-    if request.method == 'POST':
-        form = MessagingServiceConfigForm(project, request.POST)
-        config_form = SlackConfigForm(data=request.POST)
-
-        if form.is_valid() and config_form.is_valid():
-            service = form.save(commit=False)
-            service.config = json.dumps(config_form.get_config())
-            service.save()
-
-            messages.success(request, "Messaging service added successfully.")
-            return redirect('project_alerts_setup', project_pk=project_pk)
-
-    else:
-        form = MessagingServiceConfigForm(project)
-        config_form = SlackConfigForm()
-
-    return render(request, 'projects/project_messaging_service_edit.html', {
-        'project': project,
-        'form': form,
-        'config_form': config_form,
-    })'''
-
-    new_add_view = '''@atomic_for_request_method
-def project_messaging_service_add(request, project_pk):
-    project = Project.objects.get(id=project_pk, is_deleted=False)
-    _check_project_admin(project, request.user)
-
-    if request.method == 'POST':
-        form = MessagingServiceConfigForm(project, request.POST)
-        kind = request.POST.get('kind', 'slack')
-        ConfigFormClass = get_config_form_for_kind(kind)
-        config_form = ConfigFormClass(data=request.POST)
-
-        if form.is_valid() and config_form.is_valid():
-            service = form.save(commit=False)
-            service.config = json.dumps(config_form.get_config())
-            service.save()
-
-            messages.success(request, "Messaging service added successfully.")
-            return redirect('project_alerts_setup', project_pk=project_pk)
-
-    else:
-        kind = request.GET.get('kind', 'slack')
-        form = MessagingServiceConfigForm(project, initial={'kind': kind})
-        ConfigFormClass = get_config_form_for_kind(kind)
-        config_form = ConfigFormClass()
-
-    return render(request, 'projects/project_messaging_service_edit.html', {
-        'project': project,
-        'form': form,
-        'config_form': config_form,
-    })'''
-
-    if old_add_view in content:
-        content = content.replace(old_add_view, new_add_view)
-        print("  [OK] Patched project_messaging_service_add view")
-    else:
-        print("  [WARN] Could not find project_messaging_service_add view pattern")
-
-    # === STEP 3: Patch project_messaging_service_edit ===
-    old_edit_view = '''@atomic_for_request_method
-def project_messaging_service_edit(request, project_pk, service_pk):
-    project = Project.objects.get(id=project_pk, is_deleted=False)
-    _check_project_admin(project, request.user)
-
-    instance = project.service_configs.get(id=service_pk)
-
-    if request.method == 'POST':
-        form = MessagingServiceConfigForm(project, request.POST, instance=instance)
-        config_form = SlackConfigForm(data=request.POST)
-
-        if form.is_valid() and config_form.is_valid():
-            service = form.save(commit=False)
-            service.config = json.dumps(config_form.get_config())
-            service.save()
-
-            messages.success(request, "Messaging service updated successfully.")
-            return redirect('project_alerts_setup', project_pk=project_pk)
-
-    else:
-        form = MessagingServiceConfigForm(project, instance=instance)
-        config_form = SlackConfigForm(config=json.loads(instance.config))
-
-    return render(request, 'projects/project_messaging_service_edit.html', {
-        'project': project,
-        'service_config': instance,
-        'form': form,
-        'config_form': config_form,
-    })'''
-
-    new_edit_view = '''@atomic_for_request_method
-def project_messaging_service_edit(request, project_pk, service_pk):
-    project = Project.objects.get(id=project_pk, is_deleted=False)
-    _check_project_admin(project, request.user)
-
-    instance = project.service_configs.get(id=service_pk)
-    ConfigFormClass = get_config_form_for_kind(instance.kind)
-
-    if request.method == 'POST':
-        form = MessagingServiceConfigForm(project, request.POST, instance=instance)
-        # Always use the instance's kind - ignore any attempt to change it
-        ConfigFormClass = get_config_form_for_kind(instance.kind)
-        config_form = ConfigFormClass(data=request.POST)
-
-        if form.is_valid() and config_form.is_valid():
-            service = form.save(commit=False)
-            # Ensure kind cannot be changed
-            service.kind = instance.kind
-            service.config = json.dumps(config_form.get_config())
-            service.save()
-
-            messages.success(request, "Messaging service updated successfully.")
-            return redirect('project_alerts_setup', project_pk=project_pk)
-
-    else:
-        form = MessagingServiceConfigForm(project, instance=instance)
-        # Disable the kind dropdown for existing services - type cannot be changed
-        form.fields['kind'].disabled = True
-        form.fields['kind'].help_text = "Backend type cannot be changed. Delete and recreate the service to use a different backend."
-        try:
-            config_form = ConfigFormClass(config=json.loads(instance.config))
-        except (json.JSONDecodeError, KeyError):
-            config_form = ConfigFormClass()
-
-    return render(request, 'projects/project_messaging_service_edit.html', {
-        'project': project,
-        'service_config': instance,
-        'form': form,
-        'config_form': config_form,
-    })'''
-
-    if old_edit_view in content:
-        content = content.replace(old_edit_view, new_edit_view)
-        print("  [OK] Patched project_messaging_service_edit view")
-    else:
-        print("  [WARN] Could not find project_messaging_service_edit view pattern")
-
-    # Write the patched content
-    if content != original_content:
-        with open(VIEWS_FILE, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"  Patched file size: {len(content)} bytes")
-        print("  [OK] views.py patched successfully")
+    if all_ok:
+        print("\n  [OK] Modern architecture detected - no patching needed!")
         return True
     else:
-        print("  [WARN] No changes made to views.py")
-        return False
-
-
-def verify_syntax():
-    """Verify the patched file has valid Python syntax."""
-    print("\nVerifying Python syntax...")
-
-    try:
-        with open(VIEWS_FILE, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        compile(content, VIEWS_FILE, "exec")
-        print("  [OK] Syntax is valid")
-        return True
-
-    except SyntaxError as e:
-        print(f"  [ERROR] Syntax error: {e}")
-        print(f"  Line {e.lineno}: {e.text}")
+        print("\n  [WARN] Older architecture detected - patching may be needed")
+        print("  Please check if you're using Bugsink 2.0.x or later")
         return False
 
 
 def main():
     print("=" * 60)
-    print("Bugsink Views Patch - Dynamic ConfigForm Loading")
+    print("Bugsink Views Patch - Architecture Verification")
     print("=" * 60)
+    print()
+    print("NOTE: Bugsink 2.0.12+ already has dynamic form loading.")
+    print("This script now only verifies the architecture is in place.")
+    print()
 
-    if not patch_views_file():
-        print("\n[ERROR] Failed to patch views.py")
-        sys.exit(1)
-
-    if not verify_syntax():
-        print("\n[ERROR] Patched file has syntax errors")
+    if not verify_modern_architecture():
+        print("\n[WARNING] Views may need manual patching for older Bugsink versions")
+        print("See the original patch_views.py for the legacy patching logic")
         sys.exit(1)
 
     print("\n" + "=" * 60)
-    print("[SUCCESS] Views patch complete!")
+    print("[SUCCESS] Views architecture verification complete!")
+    print("No patching required for Bugsink 2.0.12+")
     print("=" * 60)
 
 

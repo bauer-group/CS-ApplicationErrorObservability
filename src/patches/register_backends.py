@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-Backend Registration Patch for Bugsink v2
-==========================================
+Backend Registration Patch for Bugsink v2.x
+===========================================
 
 This script patches Bugsink to register custom messaging backends
 during Docker image build.
 
-Bugsink v2 registers backends in alerts/models.py via:
-1. Import statements for backend classes
-2. KIND_CHOICES in the MessagingServiceConfig.kind field
-3. get_backend() method that returns the appropriate backend class
+Bugsink v2.x uses a modern architecture with:
+1. Import statements for backend classes at the top
+2. get_alert_service_kind_choices() function returning available backends
+3. get_alert_service_backend_class(kind) function returning backend class
 
-This script patches models.py to add our custom backends.
+This script patches alerts/models.py to add our custom backends.
+
+Compatible with: Bugsink 2.0.x+
+Last updated: 2026
 """
 
 import os
@@ -64,60 +67,103 @@ def patch_models_file():
     print(f"  Original file size: {len(content)} bytes")
 
     # Check if already patched
-    if "jira_cloud" in content or "JiraCloudBackend" in content:
+    if "jira_cloud" in content and "JiraCloudBackend" in content:
         print("  [OK] Already patched")
         return True
 
     original_content = content
 
     # === STEP A: Add imports ===
-    # Find the existing backend import and add ours after it
-    import_pattern = r'(from \.service_backends\.slack import SlackBackend)'
+    # Find the last existing backend import and add ours after it
+    # Current Bugsink has imports like:
+    #   from .service_backends.slack import SlackBackend
+    #   from .service_backends.mattermost import MattermostBackend
+    #   from .service_backends.discord import DiscordBackend
+
+    # Find the last backend import line
+    import_pattern = r'(from \.service_backends\.\w+ import \w+Backend\n)(?=\n)'
 
     if re.search(import_pattern, content):
-        import_lines = ["from .service_backends.slack import SlackBackend"]
+        # Build our import lines
+        new_imports = ""
         for module_name, class_name, kind, display_name in BACKENDS:
-            import_lines.append(f"from .service_backends.{module_name} import {class_name}")
-        new_imports = "\n".join(import_lines)
-        content = re.sub(import_pattern, new_imports, content)
-        print("  [OK] Added import statements")
+            new_imports += f"from .service_backends.{module_name} import {class_name}\n"
+
+        # Find position after last import
+        matches = list(re.finditer(r'from \.service_backends\.\w+ import \w+Backend\n', content))
+        if matches:
+            last_match = matches[-1]
+            insert_pos = last_match.end()
+            content = content[:insert_pos] + new_imports + content[insert_pos:]
+            print("  [OK] Added import statements")
+        else:
+            print("  [WARN] Could not find position for imports")
+            return False
     else:
-        print("  [WARN] Could not find SlackBackend import")
+        print("  [WARN] Could not find backend import pattern")
         return False
 
-    # === STEP B: Update kind choices ===
-    # Find the kind field choices and add our backends
-    choices_pattern = r'(kind = models\.CharField\(choices=\[)\("slack", "Slack \(or compatible\)"\),?\s*(\])'
+    # === STEP B: Update get_alert_service_kind_choices() ===
+    # Find the function and add our choices to the list
+    # The function returns a list like: [("discord", "Discord"), ("slack", "Slack"), ...]
 
-    if re.search(choices_pattern, content):
-        choices = ['("slack", "Slack (or compatible)")']
+    choices_func_pattern = r'(def get_alert_service_kind_choices\(\):.*?return \[)(.*?)(\])'
+
+    match = re.search(choices_func_pattern, content, re.DOTALL)
+    if match:
+        prefix = match.group(1)
+        existing_choices = match.group(2)
+        suffix = match.group(3)
+
+        # Add our choices (sorted alphabetically)
+        new_choices = existing_choices.rstrip().rstrip(',')
         for module_name, class_name, kind, display_name in BACKENDS:
-            choices.append(f'("{kind}", "{display_name}")')
-        new_choices = f'kind = models.CharField(choices=[{", ".join(choices)}, ]'
-        content = re.sub(choices_pattern, new_choices, content)
-        print("  [OK] Updated kind choices")
+            # Check if this choice already exists
+            if f'"{kind}"' not in new_choices:
+                new_choices += f',\n        ("{kind}", "{display_name}")'
+
+        # Sort the choices alphabetically by kind
+        # Extract all tuples, sort them, and rebuild
+        choice_pattern = r'\("(\w+)", "([^"]+)"\)'
+        all_choices = re.findall(choice_pattern, new_choices)
+        all_choices = sorted(set(all_choices), key=lambda x: x[0])
+
+        # Rebuild the choices list
+        rebuilt_choices = "\n"
+        for kind_val, display in all_choices:
+            rebuilt_choices += f'        ("{kind_val}", "{display}"),\n'
+        rebuilt_choices += "    "
+
+        content = content[:match.start()] + prefix + rebuilt_choices + suffix + content[match.end():]
+        print("  [OK] Updated get_alert_service_kind_choices()")
     else:
-        print("  [WARN] Could not find kind choices pattern")
+        print("  [WARN] Could not find get_alert_service_kind_choices() function")
 
-    # === STEP C: Update get_backend() method ===
-    # Find the get_backend method and add our backends
-    get_backend_pattern = r'(def get_backend\(self\):)\s*(# once we have multiple backends: lookup by kind\.)\s*(return SlackBackend\(self\))'
+    # === STEP C: Update get_alert_service_backend_class() ===
+    # Find the function and add our backend mappings before the raise ValueError line
+    # The function has: if kind == "slack": return SlackBackend
 
-    if re.search(get_backend_pattern, content):
-        backend_lines = [
-            "def get_backend(self):",
-            '        if self.kind == "slack":',
-            "            return SlackBackend(self)",
-        ]
+    # Find the raise ValueError line in get_alert_service_backend_class and insert before it
+    # Pattern matches the indented raise ValueError line
+    raise_pattern = r'(    raise ValueError\(f"Unknown backend kind:)'
+
+    match = re.search(raise_pattern, content)
+    if match:
+        # Check which backends need to be added
+        new_cases = ""
         for module_name, class_name, kind, display_name in BACKENDS:
-            backend_lines.append(f'        if self.kind == "{kind}":')
-            backend_lines.append(f"            return {class_name}(self)")
-        backend_lines.append('        raise ValueError(f"Unknown backend kind: {self.kind}")')
-        new_get_backend = "\n".join(backend_lines)
-        content = re.sub(get_backend_pattern, new_get_backend, content)
-        print("  [OK] Updated get_backend() method")
+            if f'if kind == "{kind}"' not in content:
+                new_cases += f'    if kind == "{kind}":\n        return {class_name}\n'
+
+        if new_cases:
+            # Insert new cases before the raise statement
+            insert_pos = match.start(1)
+            content = content[:insert_pos] + new_cases + content[insert_pos:]
+            print("  [OK] Updated get_alert_service_backend_class()")
+        else:
+            print("  [OK] get_alert_service_backend_class() already has all backends")
     else:
-        print("  [WARN] Could not find get_backend() method pattern")
+        print("  [WARN] Could not find raise ValueError in get_alert_service_backend_class()")
 
     # Write the patched content
     if content != original_content:
@@ -151,16 +197,19 @@ def verify_syntax():
 
 def show_patched_content():
     """Show the patched models.py content for verification."""
-    print("\n--- Patched models.py ---")
+    print("\n--- Patched models.py (first 100 lines) ---")
     with open(MODELS_FILE, "r", encoding="utf-8") as f:
-        for i, line in enumerate(f.readlines(), 1):
+        lines = f.readlines()
+        for i, line in enumerate(lines[:100], 1):
             print(f"  {i:3}: {line.rstrip()}")
+    if len(lines) > 100:
+        print(f"  ... ({len(lines) - 100} more lines)")
     print("--- End ---")
 
 
 def main():
     print("=" * 60)
-    print("Bugsink Custom Backend Registration")
+    print("Bugsink Custom Backend Registration (v2.x compatible)")
     print("=" * 60)
 
     try:

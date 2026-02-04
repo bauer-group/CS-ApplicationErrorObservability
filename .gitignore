@@ -6,3 +6,10 @@
 # Environment files
 .env
 
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.pdb
