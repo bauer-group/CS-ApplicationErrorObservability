@@ -1,3 +1,13 @@
+## [0.11.2](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.11.1...v0.11.2) (2026-02-04)
+
+### 🐛 Bug Fixes
+
+* Add comments to clarify handling of deleted configurations in failure and success info storage ([96996aa](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/96996aa25b5218bce278bce8e1034b76c1451735))
+
+### ♻️ Refactoring
+
+* Update alert filter handling and timeout settings across notification backends ([2c1b485](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/2c1b485ecd5141bb909e41413f4ad9a7a615b083))
+
 ## [0.11.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.11.0...v0.11.1) (2026-02-04)
 
 ### 🐛 Bug Fixes
