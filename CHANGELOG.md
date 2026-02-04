@@ -1,3 +1,9 @@
+## [0.11.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.11.0...v0.11.1) (2026-02-04)
+
+### 🐛 Bug Fixes
+
+* Update Bugsink patches for v2.0.12+ compatibility ([9d4452b](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/9d4452b99a919caf5727f46e7f135ba2b2dc238e))
+
 # [0.11.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.10.1...v0.11.0) (2026-01-07)
 
 
