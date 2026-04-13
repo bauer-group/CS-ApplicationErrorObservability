@@ -21,6 +21,8 @@ All backends follow Bugsink's existing backend architecture pattern:
 ```
 alerts/service_backends/
 ├── __init__.py
+├── base.py            # Bugsink: BaseWebhookBackend with SSRF protection
+├── webhook_security.py # Bugsink: URL validation and allow/deny lists
 ├── slack.py           # Existing
 ├── mattermost.py      # Existing
 ├── discord.py         # Existing
@@ -32,10 +34,11 @@ alerts/service_backends/
 ```
 
 Each backend provides:
-- A `ConfigForm` class (Django Form) for user configuration
+- A `ConfigForm` class (Django Form) for user configuration with URL validation
 - A `Backend` class implementing `send_test_message()` and `send_alert()`
 - Async task functions using `@shared_task` for non-blocking message delivery
 - Failure tracking integration with `MessagingServiceConfig`
+- SSRF protection via `validate_webhook_url()` on all outbound HTTP requests
 
 ## Backend Details
 
@@ -221,10 +224,14 @@ All message sending is performed asynchronously using Snappea's `@shared_task` d
 
 ### Security Considerations
 
+- **SSRF Protection (Bugsink 2.1+):** All outbound HTTP requests are validated via `validate_webhook_url()` from Bugsink's `webhook_security` module. This enforces hostname/IP/CIDR allow and deny lists, blocks non-global IPs by default, and prevents DNS rebinding attacks by re-resolving on every request.
+- **Redirect Protection:** Webhook-type backends (Teams, Generic Webhook) use `safe_post()` from `BaseWebhookBackend` which sets `allow_redirects=False` to prevent SSRF via open redirects. API backends (Jira, GitHub, PagerDuty) also set `allow_redirects=False` explicitly.
+- **Form Validation:** Backends with user-configurable URLs (Teams, Generic Webhook, Jira) validate the URL at configuration time via `clean_webhook_url()` / `clean_jira_url()`.
 - API tokens and secrets are stored in the encrypted `config` field
-- Webhook URLs support HTTPS
 - Password fields use `render_value=True` to allow editing without re-entering
 - No sensitive data is logged
+
+> **Configuration:** See [Webhook Security](BUGSINK-CONFIGURATION.md#webhook-security) for `ALERTS_WEBHOOK_OUTBOUND_MODE`, allow/deny lists, and `ALERTS_WEBHOOK_DENY_NON_GLOBAL` settings.
 
 ## Testing
 
@@ -247,10 +254,10 @@ alerts/service_backends/webhook.py            # NEW: Generic Webhook backend
 
 ## Compatibility
 
-- **Bugsink Version:** 2.x
-- **Python Version:** 3.10+
+- **Bugsink Version:** 2.1.x+ (requires `BaseWebhookBackend` and `webhook_security` module)
+- **Python Version:** 3.12+ (as shipped in the Bugsink Docker image)
 - **Django Version:** Compatible with Bugsink's Django version
-- **No additional dependencies required**
+- **No additional dependencies required** (uses `requests` already bundled with Bugsink)
 
 ## Contributing
 

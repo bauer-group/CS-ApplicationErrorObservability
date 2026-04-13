@@ -306,6 +306,34 @@ docker compose up -d
     └── generate-secrets.sh     # Secret generation script
 ```
 
+## Bugsink Compatibility
+
+This table shows which versions of this project are compatible with which Bugsink base versions. Always check for breaking changes before upgrading.
+
+| Release | Bugsink Version | Breaking Changes | Notes |
+| ------- | --------------- | ---------------- | ----- |
+| **0.12.0+** | **2.1.x** | Yes | SSRF protection via `BaseWebhookBackend`, `webhook_security` module required. All custom backends updated. New settings: `ALERTS_WEBHOOK_*`, `MAX_EVENT_AGE_DAYS`, `MAX_STORED_FILE_*`, proxy headers. |
+| 0.9.0 – 0.11.2 | 2.0.12 – 2.0.x | No | Initial stable release. Custom backends use direct `requests.post()`. |
+| 0.1.0 – 0.8.x | 2.0.0 – 2.0.11 | No | Early development. Manual view/template patching required. |
+
+### Upgrade Guide: 2.0.x → 2.1.x
+
+When upgrading Bugsink from 2.0.x to 2.1.x, the following changes apply:
+
+1. **Custom backends** now inherit from `BaseWebhookBackend` (Teams, Generic Webhook) or use `validate_webhook_url()` (Jira, GitHub, PagerDuty) for SSRF protection.
+2. **New environment variables** are available in `.env` — see [Webhook Security](docs/BUGSINK-CONFIGURATION.md#webhook-security), [Data Retention](docs/BUGSINK-CONFIGURATION.md#data-retention), and [Proxy Headers](docs/BUGSINK-CONFIGURATION.md#proxy-headers).
+3. **Non-global IPs are blocked by default** (`ALERTS_WEBHOOK_DENY_NON_GLOBAL=true`). If your notification targets are on internal networks, set this to `false` or add them to `ALERTS_WEBHOOK_ALLOW_LIST`.
+4. **Database migrations** run automatically on container start — no manual action required.
+
+### Key Bugsink Changes per Version
+
+| Bugsink Version | Key Changes |
+| --------------- | ----------- |
+| 2.1.2 | Storage capacity management (file count + byte caps) |
+| 2.1.1 | Security fix for upload checksums, sourcemap null handling |
+| 2.1.0 | SSRF protection (`BaseWebhookBackend`, `webhook_security`), object storage, `vacuum` command, `MAX_EVENT_AGE_DAYS`, proxy header settings |
+| 2.0.12 | Last version without SSRF protection module |
+
 ## Documentation
 
 - [Quick Start Guide](docs/BUGSINK-QUICKSTART.md)
@@ -315,6 +343,7 @@ docker compose up -d
 - [Client-Kit](client-kit/README.md) - Automated SDK integration tool
 - [Sentry SDK Integration](docs/SENTRY-SDK-INTEGRATION.md)
 - [Complete SDK Reference](docs/SENTRY-SDK-COMPLETE-REFERENCE.md)
+- [Notification Backends](docs/NOTIFICATION_BACKENDS.md) - Jira, GitHub, Teams, PagerDuty, Webhook
 
 ## License
 

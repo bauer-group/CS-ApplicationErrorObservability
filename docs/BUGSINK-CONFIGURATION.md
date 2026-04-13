@@ -15,6 +15,9 @@ This document provides a comprehensive reference for all configuration options a
 - [Email Configuration (SMTP)](#email-configuration-smtp)
 - [Rate Limits & Maximums](#rate-limits--maximums)
 - [Background Worker](#background-worker)
+- [Webhook Security](#webhook-security)
+- [Data Retention](#data-retention)
+- [Proxy Headers](#proxy-headers)
 - [Privacy & Debugging](#privacy--debugging)
 
 ---
@@ -596,6 +599,121 @@ Bugsink uses a background worker (snappea) for processing events and sending ema
 **Default:** `2`
 
 Number of worker threads in the background worker process. Event processing is serial, so values of 2-4 are typically optimal.
+
+---
+
+## Webhook Security
+
+> **Available since Bugsink 2.1.0**
+
+These settings control outbound webhook security (SSRF protection) for all notification backends.
+
+### `ALERTS_WEBHOOK_OUTBOUND_MODE`
+
+**Default:** `open`
+
+Controls the outbound webhook policy:
+
+| Mode | Behavior |
+|------|----------|
+| `open` | Allow all destinations unless explicitly denied |
+| `allowlist_only` | Only allow destinations on the allow list |
+
+### `ALERTS_WEBHOOK_ALLOW_LIST`
+
+**Default:** (empty)
+
+Comma-separated list of allowed webhook destinations. Accepts hostnames, IP addresses, and CIDR ranges.
+
+```env
+ALERTS_WEBHOOK_ALLOW_LIST=hooks.slack.com,discord.com,10.0.0.0/8
+```
+
+### `ALERTS_WEBHOOK_DENY_LIST`
+
+**Default:** (empty)
+
+Comma-separated list of denied webhook destinations. Deny rules take precedence over allow rules.
+
+```env
+ALERTS_WEBHOOK_DENY_LIST=internal.corp.local,192.168.0.0/16
+```
+
+### `ALERTS_WEBHOOK_DENY_NON_GLOBAL`
+
+**Default:** `true`
+
+When enabled, blocks outbound webhooks to non-global IP addresses (loopback, private, link-local). This is a critical SSRF protection mechanism.
+
+Set to `false` only if your notification targets (e.g., Microsoft Teams, Jira) are hosted on internal networks.
+
+---
+
+## Data Retention
+
+> **Available since Bugsink 2.1.0**
+
+These settings control automatic cleanup of old events and stored files.
+
+### `MAX_EVENT_AGE_DAYS`
+
+**Default:** (disabled)
+
+Automatically delete events older than the specified number of days. Use together with the `vacuum` management command for periodic cleanup.
+
+```env
+MAX_EVENT_AGE_DAYS=90
+```
+
+### `MAX_STORED_FILE_COUNT`
+
+**Default:** (disabled)
+
+Maximum number of stored files (sourcemaps, debug symbols, etc.). When exceeded, oldest files are removed.
+
+### `MAX_STORED_FILE_BYTES`
+
+**Default:** (disabled)
+
+Maximum total size (in bytes) of stored files. When exceeded, oldest files are removed.
+
+### `FILE_OBJECT_STORAGE_PATH`
+
+**Default:** (disabled)
+
+Path for file-based object storage. When set, uploaded files are stored on disk instead of in the database. Recommended for large deployments.
+
+```env
+FILE_OBJECT_STORAGE_PATH=/data/objects
+```
+
+---
+
+## Proxy Headers
+
+> **Available since Bugsink 2.1.0**
+
+These settings require `BEHIND_HTTPS_PROXY=true`.
+
+### `USE_X_FORWARDED_HOST`
+
+**Default:** `false`
+
+Trust the `X-Forwarded-Host` header from the reverse proxy. Enable when your proxy rewrites the Host header.
+
+### `USE_X_FORWARDED_FOR`
+
+**Default:** `false`
+
+Trust the `X-Forwarded-For` header for client IP detection. Mutually exclusive with `USE_X_REAL_IP`.
+
+Requires `X_FORWARDED_FOR_PROXY_COUNT` to be set to a positive integer.
+
+### `X_FORWARDED_FOR_PROXY_COUNT`
+
+**Default:** `0`
+
+Number of proxies in front of Bugsink. Required when `USE_X_FORWARDED_FOR=true`.
 
 ---
 

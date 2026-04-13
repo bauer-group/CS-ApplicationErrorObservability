@@ -13,7 +13,7 @@ Bugsink v2.x uses a modern architecture with:
 
 This script patches alerts/models.py to add our custom backends.
 
-Compatible with: Bugsink 2.0.x+
+Compatible with: Bugsink 2.1.x+
 Last updated: 2026
 """
 

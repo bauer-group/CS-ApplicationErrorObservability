@@ -12,7 +12,7 @@ IMPORTANT: Bugsink v2.x already includes dynamic form loading via:
 This patch is NO LONGER NEEDED for Bugsink 2.0.12 and later.
 It now only verifies that the modern architecture is in place.
 
-Compatible with: Bugsink 2.0.12+
+Compatible with: Bugsink 2.1.x+
 Last updated: 2026
 """
 

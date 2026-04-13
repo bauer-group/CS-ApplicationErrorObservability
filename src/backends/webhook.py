@@ -7,6 +7,8 @@ Flexible for custom integrations, home automation, or third-party services.
 
 Requirements:
     - HTTP(S) endpoint that accepts POST requests with JSON body
+
+Compatible with: Bugsink 2.1.x+
 """
 
 import json
@@ -20,6 +22,8 @@ from bugsink.app_settings import get_settings
 from bugsink.transaction import immediate_atomic
 
 from issues.models import Issue
+from .base import BaseWebhookBackend
+from .webhook_security import validate_webhook_url
 
 
 HTTP_METHOD_CHOICES = [
@@ -82,6 +86,14 @@ class WebhookConfigForm(forms.Form):
             custom_hdrs = config.get("custom_headers", {})
             self.fields["custom_headers"].initial = json.dumps(custom_hdrs) if custom_hdrs else ""
             self.fields["payload_type"].initial = config.get("payload_type", "full")
+
+    def clean_webhook_url(self):
+        webhook_url = self.cleaned_data["webhook_url"]
+        try:
+            validate_webhook_url(webhook_url)
+        except ValueError as e:
+            raise forms.ValidationError(str(e)) from e
+        return webhook_url
 
     def clean_custom_headers(self):
         value = self.cleaned_data.get("custom_headers", "").strip()
@@ -184,12 +196,11 @@ def webhook_send_test_message(webhook_url, http_method, secret_header, secret_va
         headers.update(custom_headers)
 
     try:
-        result = requests.request(
+        result = WebhookBackend.safe_request(
             http_method,
             webhook_url,
             data=json.dumps(payload),
             headers=headers,
-            timeout=5,
         )
         result.raise_for_status()
         _store_success_info(service_config_id)
@@ -252,12 +263,11 @@ def webhook_send_alert(webhook_url, http_method, secret_header, secret_value,
         headers.update(custom_headers)
 
     try:
-        result = requests.request(
+        result = WebhookBackend.safe_request(
             http_method,
             webhook_url,
             data=json.dumps(payload),
             headers=headers,
-            timeout=5,
         )
         result.raise_for_status()
         _store_success_info(service_config_id)
@@ -270,8 +280,15 @@ def webhook_send_alert(webhook_url, http_method, secret_header, secret_value,
         _store_failure_info(service_config_id, e)
 
 
-class WebhookBackend:
+class WebhookBackend(BaseWebhookBackend):
     """Backend class for Generic Webhook integration."""
+
+    @classmethod
+    def safe_request(cls, method, webhook_url, *args, **kwargs):
+        """Validate URL and send request with any HTTP method (POST/PUT/PATCH)."""
+        validate_webhook_url(webhook_url)
+        kwargs.setdefault("allow_redirects", False)
+        return requests.request(method, webhook_url, *args, timeout=5, **kwargs)
 
     def __init__(self, service_config):
         self.service_config = service_config
