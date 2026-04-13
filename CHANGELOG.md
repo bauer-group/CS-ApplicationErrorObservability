@@ -1,3 +1,12 @@
+## [1.0.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.11.2...v1.0.0) (2026-04-13)
+
+### ⚠ BREAKING CHANGES
+
+* Requires Bugsink 2.1.0+ base image (BaseWebhookBackend
+and webhook_security module). Not compatible with Bugsink 2.0.x.
+
+* feat!(backends): added SSRF protection and Bugsink 2.1.x compatibility ([5fad079](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/5fad0795def060e95b592e4b72411f506ab57ca2))
+
 ## [0.11.2](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.11.1...v0.11.2) (2026-02-04)
 
 ### 🐛 Bug Fixes
