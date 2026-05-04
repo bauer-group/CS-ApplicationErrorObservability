@@ -1,3 +1,9 @@
+## [1.0.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v1.0.0...v1.0.1) (2026-05-04)
+
+### 🐛 Bug Fixes
+
+* **env:** aligned PROXY_NETWORK default with EDGEPROXY ([a32071c](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/a32071c5f0ac3f3a2165e1bd8f471325876fa758))
+
 ## [1.0.0](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v0.11.2...v1.0.0) (2026-04-13)
 
 ### ⚠ BREAKING CHANGES
