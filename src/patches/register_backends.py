@@ -32,7 +32,8 @@ MODELS_FILE = os.path.join(ALERTS_DIR, "models.py")
 BACKENDS = [
     ("jira_cloud", "JiraCloudBackend", "jira_cloud", "Jira Cloud"),
     ("github_issues", "GitHubIssuesBackend", "github_issues", "GitHub Issues"),
-    ("microsoft_teams", "MicrosoftTeamsBackend", "microsoft_teams", "Microsoft Teams"),
+    # Bugsink 2.5.1+ ships its own "msteams" kind labeled "Microsoft Teams"; keep ours distinguishable in the UI.
+    ("microsoft_teams", "MicrosoftTeamsBackend", "microsoft_teams", "Microsoft Teams (Enhanced)"),
     ("pagerduty", "PagerDutyBackend", "pagerduty", "PagerDuty"),
     ("webhook", "WebhookBackend", "webhook", "Webhook (Generic)"),
 ]
