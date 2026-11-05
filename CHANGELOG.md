@@ -1,3 +1,23 @@
+# Changelog
+
+All notable changes to this project are documented here. This file is maintained
+automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
+on every release to `main`.
+
+## [1.0.2](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v1.0.1...v1.0.2) (2026-11-05)
+
+### 🐛 Bug Fixes
+
+* **backends:** pinned Webhook and Jira requests to validated IP ([3f9d698](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/3f9d698dd52eab14b9e7a6678810ec78acb4a2fc))
+* **ci:** granted scopes the called modules need ([b180333](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/b180333f6c8e0646bd016ea73755e4d5be832eef))
+* **patches:** labeled our Teams backend as Enhanced ([1868c69](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/1868c6970bd537235be29b031624a0a1b11450f5))
+
+### 🔧 Maintenance
+
+* **ci:** removed issue AI summary workflow ([33093fd](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/33093fd080db8a218ed9f6d597162a8f4f81768c)), references [bauer-group/automation-templates#105](https://github.com/bauer-group/automation-templates/issues/105)
+* **ci:** removed redundant teams notification ([f41987b](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/f41987ba5cad586ddf5b68a13c41b70c484ffe1a))
+* **codeowners:** reassigned ownership to core team [skip ci] ([2338057](https://github.com/bauer-group/CS-ApplicationErrorObservability/commit/23380571ed5ec4b2ba6e8f8eecc1c1c3592e643b))
+
 ## [1.0.1](https://github.com/bauer-group/CS-ApplicationErrorObservability/compare/v1.0.0...v1.0.1) (2026-05-04)
 
 ### 🐛 Bug Fixes
