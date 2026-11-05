@@ -312,7 +312,8 @@ This table shows which versions of this project are compatible with which Bugsin
 
 | Release | Bugsink Version | Breaking Changes | Notes |
 | ------- | --------------- | ---------------- | ----- |
-| **0.12.0+** | **2.1.x** | Yes | SSRF protection via `BaseWebhookBackend`, `webhook_security` module required. All custom backends updated. New settings: `ALERTS_WEBHOOK_*`, `MAX_EVENT_AGE_DAYS`, `MAX_STORED_FILE_*`, proxy headers. |
+| **1.0.2+** | **2.4.0+** | No (default `BUGSINK_VERSION=2` tracks the newest 2.x) | Webhook and Jira backends pin connections to the validated IP, which needs `OriginalHostnameAdapter` from Bugsink 2.4.0. Our Teams backend is labeled "Microsoft Teams (Enhanced)" because Bugsink 2.5.1 added its own `msteams` backend. |
+| 0.12.0 – 1.0.1 | 2.1.x | Yes | SSRF protection via `BaseWebhookBackend`, `webhook_security` module required. All custom backends updated. New settings: `ALERTS_WEBHOOK_*`, `MAX_EVENT_AGE_DAYS`, `MAX_STORED_FILE_*`, proxy headers. |
 | 0.9.0 – 0.11.2 | 2.0.12 – 2.0.x | No | Initial stable release. Custom backends use direct `requests.post()`. |
 | 0.1.0 – 0.8.x | 2.0.0 – 2.0.11 | No | Early development. Manual view/template patching required. |
 
@@ -320,7 +321,7 @@ This table shows which versions of this project are compatible with which Bugsin
 
 When upgrading Bugsink from 2.0.x to 2.1.x, the following changes apply:
 
-1. **Custom backends** now inherit from `BaseWebhookBackend` (Teams, Generic Webhook) or use `validate_webhook_url()` (Jira, GitHub, PagerDuty) for SSRF protection.
+1. **Custom backends** now inherit from `BaseWebhookBackend` (Teams, Generic Webhook, Jira) or use `validate_webhook_url()` against a fixed API host (GitHub, PagerDuty) for SSRF protection.
 2. **New environment variables** are available in `.env` — see [Webhook Security](docs/BUGSINK-CONFIGURATION.md#webhook-security), [Data Retention](docs/BUGSINK-CONFIGURATION.md#data-retention), and [Proxy Headers](docs/BUGSINK-CONFIGURATION.md#proxy-headers).
 3. **Non-global IPs are blocked by default** (`ALERTS_WEBHOOK_DENY_NON_GLOBAL=true`). If your notification targets are on internal networks, set this to `false` or add them to `ALERTS_WEBHOOK_ALLOW_LIST`.
 4. **Database migrations** run automatically on container start — no manual action required.

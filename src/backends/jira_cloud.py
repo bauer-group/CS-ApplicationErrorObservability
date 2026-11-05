@@ -31,6 +31,7 @@ from bugsink.app_settings import get_settings
 from bugsink.transaction import immediate_atomic
 
 from issues.models import Issue
+from .base import BaseWebhookBackend
 from .webhook_security import validate_webhook_url
 
 
@@ -179,7 +180,6 @@ def jira_cloud_backend_send_test_message(jira_url, user_email, api_token, projec
                                           display_name, service_config_id):
     """Send a test message to verify Jira configuration."""
     url = f"{jira_url}/rest/api/3/issue"
-    validate_webhook_url(url)
 
     payload = {
         "fields": {
@@ -209,7 +209,7 @@ def jira_cloud_backend_send_test_message(jira_url, user_email, api_token, projec
         payload["fields"]["labels"] = labels
 
     try:
-        result = requests.post(
+        result = JiraCloudBackend.safe_post(
             url,
             data=json.dumps(payload),
             headers={
@@ -217,8 +217,6 @@ def jira_cloud_backend_send_test_message(jira_url, user_email, api_token, projec
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
-            timeout=5,
-            allow_redirects=False,
         )
         result.raise_for_status()
         _store_success_info(service_config_id)
@@ -238,7 +236,6 @@ def jira_cloud_backend_send_alert(jira_url, user_email, api_token, project_key,
                                    unmute_reason=None):
     """Create a Jira issue for a Bugsink alert."""
     url = f"{jira_url}/rest/api/3/issue"
-    validate_webhook_url(url)
 
     issue = Issue.objects.get(id=issue_id)
     issue_url = get_settings().BASE_URL + issue.get_absolute_url()
@@ -285,7 +282,7 @@ def jira_cloud_backend_send_alert(jira_url, user_email, api_token, project_key,
         payload["fields"]["labels"] = labels
 
     try:
-        result = requests.post(
+        result = JiraCloudBackend.safe_post(
             url,
             data=json.dumps(payload),
             headers={
@@ -293,8 +290,6 @@ def jira_cloud_backend_send_alert(jira_url, user_email, api_token, project_key,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
-            timeout=5,
-            allow_redirects=False,
         )
         result.raise_for_status()
         _store_success_info(service_config_id)
@@ -307,7 +302,7 @@ def jira_cloud_backend_send_alert(jira_url, user_email, api_token, project_key,
         _store_failure_info(service_config_id, e)
 
 
-class JiraCloudBackend:
+class JiraCloudBackend(BaseWebhookBackend):
     """Backend class for Jira Cloud integration."""
 
     def __init__(self, service_config):

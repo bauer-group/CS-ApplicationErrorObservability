@@ -22,8 +22,8 @@ from bugsink.app_settings import get_settings
 from bugsink.transaction import immediate_atomic
 
 from issues.models import Issue
-from .base import BaseWebhookBackend
-from .webhook_security import validate_webhook_url
+from .base import BaseWebhookBackend, OriginalHostnameAdapter
+from .webhook_security import parse_webhook_url, pin_url_to_ip, validate_webhook_destination, validate_webhook_url
 
 
 HTTP_METHOD_CHOICES = [
@@ -284,11 +284,24 @@ class WebhookBackend(BaseWebhookBackend):
     """Backend class for Generic Webhook integration."""
 
     @classmethod
-    def safe_request(cls, method, webhook_url, *args, **kwargs):
-        """Validate URL and send request with any HTTP method (POST/PUT/PATCH)."""
-        validate_webhook_url(webhook_url)
-        kwargs.setdefault("allow_redirects", False)
-        return requests.request(method, webhook_url, *args, timeout=5, **kwargs)
+    def safe_request(cls, method, webhook_url, *args, headers, **kwargs):
+        """Like BaseWebhookBackend.safe_post, but for any HTTP method (POST/PUT/PATCH).
+
+        The connection is pinned to the validated IP so a DNS change between
+        validation and connect cannot redirect the request (DNS rebinding).
+        """
+        parsed = parse_webhook_url(webhook_url)
+        resolved_ips = validate_webhook_destination(parsed.hostname)
+        pinned_url = pin_url_to_ip(parsed, resolved_ips[0])
+
+        # Custom headers are user-supplied; Host must always match the validated destination.
+        headers = {name: value for name, value in headers.items() if name.lower() != "host"}
+        headers["Host"] = parsed.netloc
+
+        with requests.Session() as session:
+            session.mount(pinned_url, OriginalHostnameAdapter(parsed.hostname))
+            return session.request(method, pinned_url, *args, headers=headers,
+                                   allow_redirects=False, timeout=5, **kwargs)
 
     def __init__(self, service_config):
         self.service_config = service_config
